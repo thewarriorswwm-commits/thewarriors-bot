@@ -44,7 +44,10 @@ class GuerraView(discord.ui.View):
 # MODAL PARA REGISTRAR GUERRA
 # ============================================================
 
-class GuerraModal(discord.ui.Modal, title="Registrar guerra"):
+class GuerraModal(
+    discord.ui.Modal,
+    title="Registrar guerra"
+):
 
     rival = discord.ui.TextInput(
         label="Rival",
@@ -96,27 +99,32 @@ class GuerraModal(discord.ui.Modal, title="Registrar guerra"):
         # ====================================================
 
         try:
+
             fecha_hora = datetime.strptime(
-                f"{self.fecha.value.strip()} {self.hora.value.strip()}",
+                f"{self.fecha.value.strip()} "
+                f"{self.hora.value.strip()}",
                 "%d/%m/%Y %H:%M"
-            ).replace(tzinfo=ZONA_HORARIA)
+            ).replace(
+                tzinfo=ZONA_HORARIA
+            )
 
         except ValueError:
 
             await interaction.response.send_message(
                 "❌ La fecha u hora no tienen un formato válido.\n"
-                "Ejemplo:\n"
-                "`06/08/2026`\n"
-                "`22:00`",
+                "Ejemplo: `06/08/2026` y `22:00`.",
                 ephemeral=True
             )
+
             return
 
         # ====================================================
-        # COMPROBAR QUE SEA FUTURA
+        # COMPROBAR FECHA FUTURA
         # ====================================================
 
-        ahora = datetime.now(ZONA_HORARIA)
+        ahora = datetime.now(
+            ZONA_HORARIA
+        )
 
         if fecha_hora <= ahora:
 
@@ -124,10 +132,11 @@ class GuerraModal(discord.ui.Modal, title="Registrar guerra"):
                 "❌ La fecha de la guerra debe ser futura.",
                 ephemeral=True
             )
+
             return
 
         # ====================================================
-        # DATOS
+        # DATOS DE LA GUERRA
         # ====================================================
 
         datos = {
@@ -138,10 +147,12 @@ class GuerraModal(discord.ui.Modal, title="Registrar guerra"):
         }
 
         # ====================================================
-        # GUARDAR
+        # GUARDAR GUERRA
         # ====================================================
 
-        self.cog.guerras.append(datos)
+        self.cog.guerras.append(
+            datos
+        )
 
         # ====================================================
         # RESPONDER AL USUARIO
@@ -154,9 +165,9 @@ class GuerraModal(discord.ui.Modal, title="Registrar guerra"):
         )
 
         # ====================================================
-        # REGISTRO AUTOMÁTICO
+        # ENVIAR REGISTRO AUTOMÁTICAMENTE
         #
-        # ESTO NO DEPENDE DE ACTUALIZAR EL PANEL.
+        # ESTO ES INDEPENDIENTE DEL PANEL.
         # ====================================================
 
         try:
@@ -198,11 +209,14 @@ class GuerraModal(discord.ui.Modal, title="Registrar guerra"):
 
 class Guerras(commands.Cog):
 
-    def __init__(self, bot):
+    def __init__(
+        self,
+        bot
+    ):
 
         self.bot = bot
 
-        # Lista de guerras registradas
+        # Lista de guerras mientras el bot está encendido
         self.guerras = []
 
     # ========================================================
@@ -218,7 +232,10 @@ class Guerras(commands.Cog):
         if guild is None:
             return None
 
-        # Búsqueda exacta
+        # ----------------------------------------------------
+        # BÚSQUEDA EXACTA
+        # ----------------------------------------------------
+
         canal = discord.utils.get(
             guild.text_channels,
             name=nombre
@@ -227,10 +244,14 @@ class Guerras(commands.Cog):
         if canal:
             return canal
 
-        # Segunda búsqueda
+        # ----------------------------------------------------
+        # SEGUNDA BÚSQUEDA
+        # ----------------------------------------------------
+
         for canal in guild.text_channels:
 
             if canal.name.strip() == nombre.strip():
+
                 return canal
 
         return None
@@ -247,13 +268,16 @@ class Guerras(commands.Cog):
     ):
 
         if guild is None:
+
             print(
                 "[GUERRAS] ❌ No se encontró el servidor."
             )
+
             return
 
         # ----------------------------------------------------
-        # BUSCAR REGISTRO-GUERRA-📋
+        # BUSCAR CANAL:
+        # registro-guerra-📋
         # ----------------------------------------------------
 
         canal = self.obtener_canal(
@@ -271,7 +295,7 @@ class Guerras(commands.Cog):
             return
 
         # ----------------------------------------------------
-        # COMPROBAR BOT
+        # BOT
         # ----------------------------------------------------
 
         bot_member = guild.me
@@ -279,10 +303,14 @@ class Guerras(commands.Cog):
         if bot_member is None:
 
             print(
-                "[GUERRAS] ❌ No se encontró el bot en el servidor."
+                "[GUERRAS] ❌ No se encontró el bot."
             )
 
             return
+
+        # ----------------------------------------------------
+        # PERMISOS
+        # ----------------------------------------------------
 
         permisos = canal.permissions_for(
             bot_member
@@ -336,13 +364,17 @@ class Guerras(commands.Cog):
 
         embed.add_field(
             name="📅 Fecha",
-            value=fecha.strftime("%d/%m/%Y"),
+            value=fecha.strftime(
+                "%d/%m/%Y"
+            ),
             inline=True
         )
 
         embed.add_field(
             name="🕐 Hora",
-            value=fecha.strftime("%H:%M"),
+            value=fecha.strftime(
+                "%H:%M"
+            ),
             inline=True
         )
 
@@ -371,7 +403,7 @@ class Guerras(commands.Cog):
         )
 
         # ----------------------------------------------------
-        # ENVIAR AUTOMÁTICAMENTE
+        # ENVIAR
         # ----------------------------------------------------
 
         try:
@@ -395,8 +427,7 @@ class Guerras(commands.Cog):
         except discord.HTTPException as e:
 
             print(
-                f"[GUERRAS] ❌ Error de Discord enviando "
-                f"el registro: {e}"
+                f"[GUERRAS] ❌ Error de Discord: {e}"
             )
 
         except Exception as e:
@@ -441,12 +472,14 @@ class Guerras(commands.Cog):
                 if mensaje.author == self.bot.user:
 
                     try:
+
                         await mensaje.delete()
 
                     except (
                         discord.Forbidden,
                         discord.HTTPException
                     ):
+
                         pass
 
         except Exception as e:
@@ -457,7 +490,7 @@ class Guerras(commands.Cog):
             )
 
         # ----------------------------------------------------
-        # CREAR EMBED
+        # EMBED DEL PANEL
         # ----------------------------------------------------
 
         embed = discord.Embed(
@@ -547,7 +580,7 @@ class Guerras(commands.Cog):
             )
 
     # ========================================================
-    # COMANDO PARA PUBLICAR/ACTUALIZAR PANEL
+    # COMANDO !GUERRAS
     # ========================================================
 
     @commands.command(
@@ -568,11 +601,12 @@ class Guerras(commands.Cog):
         try:
 
             await ctx.send(
-                "✅ Panel de guerras actualizado.",
+                "✅ **Panel de guerras actualizado.**",
                 delete_after=5
             )
 
         except discord.HTTPException:
+
             pass
 
 
@@ -580,7 +614,9 @@ class Guerras(commands.Cog):
 # SETUP
 # ============================================================
 
-async def setup(bot):
+async def setup(
+    bot
+):
 
     await bot.add_cog(
         Guerras(bot)
