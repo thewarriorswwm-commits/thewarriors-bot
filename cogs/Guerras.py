@@ -4,7 +4,6 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from zoneinfo import ZoneInfo
 from datetime import datetime, timedelta
 
-
 # ============================================================
 # CONFIGURACIÓN
 # ============================================================
@@ -21,7 +20,6 @@ ROLES_GUERRA = [
     "Tank",
     "No asistiré"
 ]
-
 
 # ============================================================
 # FECHAS
@@ -48,9 +46,7 @@ def obtener_fecha_guerra(dia):
         objetivo - fecha_actual.weekday()
     ) % 7
 
-    return fecha_actual + timedelta(
-        days=diferencia
-    )
+    return fecha_actual + timedelta(days=diferencia)
 
 
 def formatear_fecha(fecha):
@@ -81,16 +77,11 @@ async def asegurar_roles(guild):
                     reason="Sistema de inscripción de guerras"
                 )
 
-                print(
-                    f"✅ Rol creado: {nombre}"
-                )
+                print(f"✅ Rol creado: {nombre}")
 
             except discord.Forbidden:
 
-                print(
-                    f"❌ No puedo crear el rol: {nombre}"
-                )
-
+                print(f"❌ No puedo crear el rol: {nombre}")
                 continue
 
             except discord.HTTPException as error:
@@ -98,7 +89,6 @@ async def asegurar_roles(guild):
                 print(
                     f"❌ Error creando {nombre}: {error}"
                 )
-
                 continue
 
         roles[nombre] = rol
@@ -120,9 +110,7 @@ async def buscar_registro(
 
     try:
 
-        async for mensaje in canal.history(
-            limit=None
-        ):
+        async for mensaje in canal.history(limit=None):
 
             if mensaje.author != canal.guild.me:
                 continue
@@ -151,7 +139,6 @@ async def buscar_registro(
                         fecha_encontrada = True
 
             if usuario_encontrado and fecha_encontrada:
-
                 return mensaje
 
     except discord.Forbidden:
@@ -254,9 +241,7 @@ async def guardar_registro(
 
     try:
 
-        await canal.send(
-            embed=embed
-        )
+        await canal.send(embed=embed)
 
         print(
             f"📝 Registro creado: "
@@ -277,7 +262,7 @@ async def guardar_registro(
 
 
 # ============================================================
-# PANEL DE GUERRA - SÁBADO
+# PANEL DE GUERRA
 # ============================================================
 
 class GuerraView(discord.ui.View):
@@ -288,9 +273,7 @@ class GuerraView(discord.ui.View):
         fecha
     ):
 
-        super().__init__(
-            timeout=None
-        )
+        super().__init__(timeout=None)
 
         self.dia = dia
         self.fecha = fecha
@@ -318,13 +301,9 @@ class GuerraView(discord.ui.View):
 
         try:
 
-            roles = await asegurar_roles(
-                guild
-            )
+            roles = await asegurar_roles(guild)
 
-            rol_elegido = roles.get(
-                nombre_rol
-            )
+            rol_elegido = roles.get(nombre_rol)
 
             if rol_elegido is None:
 
@@ -531,9 +510,7 @@ class GuerraDomingoView(discord.ui.View):
         fecha
     ):
 
-        super().__init__(
-            timeout=None
-        )
+        super().__init__(timeout=None)
 
         self.dia = "domingo"
         self.fecha = fecha
@@ -557,13 +534,9 @@ class GuerraDomingoView(discord.ui.View):
 
         try:
 
-            roles = await asegurar_roles(
-                guild
-            )
+            roles = await asegurar_roles(guild)
 
-            rol_elegido = roles.get(
-                nombre_rol
-            )
+            rol_elegido = roles.get(nombre_rol)
 
             if rol_elegido is None:
 
@@ -577,10 +550,7 @@ class GuerraDomingoView(discord.ui.View):
 
             for rol in roles.values():
 
-                if (
-                    rol != rol_elegido
-                    and rol in interaction.user.roles
-                ):
+                if rol != rol_elegido and rol in interaction.user.roles:
 
                     await interaction.user.remove_roles(
                         rol,
@@ -740,9 +710,7 @@ class GuerraDomingoView(discord.ui.View):
 # PUBLICAR PANELES
 # ============================================================
 
-async def publicar_paneles(
-    guild
-):
+async def publicar_paneles(guild):
 
     canal = discord.utils.get(
         guild.text_channels,
@@ -755,55 +723,12 @@ async def publicar_paneles(
             f"❌ No encuentro #{CANAL_GUERRAS}"
         )
 
-        return False
+        return
 
-    # ========================================================
-    # COMPROBAR PERMISOS DEL BOT
-    # ========================================================
+    fecha_sabado = obtener_fecha_guerra("sábado")
+    fecha_domingo = obtener_fecha_guerra("domingo")
 
-    if guild.me is None:
-
-        print(
-            "❌ No encuentro al bot dentro del servidor."
-        )
-
-        return False
-
-    permisos = canal.permissions_for(
-        guild.me
-    )
-
-    if not permisos.view_channel:
-
-        print(
-            f"❌ El bot no puede ver #{CANAL_GUERRAS}"
-        )
-
-        return False
-
-    if not permisos.send_messages:
-
-        print(
-            f"❌ El bot no puede escribir en #{CANAL_GUERRAS}"
-        )
-
-        return False
-
-    # ========================================================
-    # FECHAS
-    # ========================================================
-
-    fecha_sabado = obtener_fecha_guerra(
-        "sábado"
-    )
-
-    fecha_domingo = obtener_fecha_guerra(
-        "domingo"
-    )
-
-    await asegurar_roles(
-        guild
-    )
+    await asegurar_roles(guild)
 
     # ========================================================
     # AVISO
@@ -892,20 +817,14 @@ async def publicar_paneles(
         f"✅ Paneles de guerra publicados en {guild.name}"
     )
 
-    return True
-
 
 # ============================================================
 # LIMPIAR ROLES DE GUERRA
 # ============================================================
 
-async def limpiar_roles_guerra(
-    guild
-):
+async def limpiar_roles_guerra(guild):
 
-    roles = await asegurar_roles(
-        guild
-    )
+    roles = await asegurar_roles(guild)
 
     for miembro in guild.members:
 
@@ -948,10 +867,7 @@ async def limpiar_roles_guerra(
 
 class Guerras(commands.Cog):
 
-    def __init__(
-        self,
-        bot
-    ):
+    def __init__(self, bot):
 
         self.bot = bot
 
@@ -965,69 +881,38 @@ class Guerras(commands.Cog):
 
     # ========================================================
     # COMANDO MANUAL
-    # !guerras
-    # !panelguerra
     # ========================================================
 
     @commands.command(
-        name="guerras",
-        aliases=["panelguerra"]
+        name="panelguerra"
     )
     @commands.has_permissions(
         administrator=True
     )
-    async def panel_guerra(
-        self,
-        ctx
-    ):
+    async def panel_guerra(self, ctx):
 
         if ctx.guild is None:
+            return
+
+        if ctx.channel.name != CANAL_GUERRAS:
 
             await ctx.send(
-                "❌ Este comando solo funciona dentro de un servidor."
+                f"❌ Este comando solo funciona "
+                f"en #{CANAL_GUERRAS}.",
+                delete_after=5
             )
 
             return
 
         try:
 
-            resultado = await publicar_paneles(
+            await publicar_paneles(
                 ctx.guild
             )
 
-            if resultado:
-
-                await ctx.send(
-                    "✅ **Paneles de guerra lanzados correctamente "
-                    "en #guerras-⚔️.**",
-                    delete_after=5
-                )
-
-            else:
-
-                await ctx.send(
-                    "❌ **No se pudieron lanzar los paneles.**\n"
-                    "Mira la consola del bot para ver el motivo.",
-                    delete_after=10
-                )
-
-        except discord.Forbidden:
-
             await ctx.send(
-                "❌ El bot no tiene permisos para publicar "
-                "en `#guerras-⚔️`.",
-                delete_after=10
-            )
-
-        except discord.HTTPException as error:
-
-            print(
-                f"❌ Error lanzando panel manual: {error}"
-            )
-
-            await ctx.send(
-                "❌ Discord rechazó el envío del panel.",
-                delete_after=10
+                "✅ **Paneles de guerra lanzados manualmente.**",
+                delete_after=5
             )
 
         except Exception as error:
@@ -1037,57 +922,16 @@ class Guerras(commands.Cog):
             )
 
             await ctx.send(
-                f"❌ Error al lanzar el panel:\n"
-                f"```{error}```",
-                delete_after=15
+                "❌ No se pudieron lanzar "
+                "los paneles de guerra.",
+                delete_after=5
             )
-
-    # ========================================================
-    # ERROR DEL COMANDO
-    # ========================================================
-
-    @panel_guerra.error
-    async def panel_guerra_error(
-        self,
-        ctx,
-        error
-    ):
-
-        if isinstance(
-            error,
-            commands.MissingPermissions
-        ):
-
-            await ctx.send(
-                "❌ Necesitas ser administrador para usar "
-                "`!guerras`.",
-                delete_after=10
-            )
-
-            return
-
-        print(
-            f"❌ Error en !guerras: {error}"
-        )
-
-        try:
-
-            await ctx.send(
-                f"❌ Error en `!guerras`:\n"
-                f"```{error}```",
-                delete_after=15
-            )
-
-        except discord.HTTPException:
-            pass
 
     # ========================================================
     # AUTOMÁTICO — MIÉRCOLES 17:00
     # ========================================================
 
-    async def aviso_automatico(
-        self
-    ):
+    async def aviso_automatico(self):
 
         for guild in self.bot.guilds:
 
@@ -1105,16 +949,9 @@ class Guerras(commands.Cog):
 
     # ========================================================
     # LIMPIAR — LUNES 00:00
-    #
-    # BORRA:
-    # 1. REGISTROS
-    # 2. PANELES DE GUERRA
-    # 3. ROLES DE GUERRA
     # ========================================================
 
-    async def limpiar_registro(
-        self
-    ):
+    async def limpiar_registro(self):
 
         for guild in self.bot.guilds:
 
@@ -1122,16 +959,16 @@ class Guerras(commands.Cog):
             # BORRAR REGISTRO
             # =================================================
 
-            canal_registro = discord.utils.get(
+            canal = discord.utils.get(
                 guild.text_channels,
                 name=CANAL_REGISTRO
             )
 
-            if canal_registro is not None:
+            if canal is not None:
 
                 try:
 
-                    async for mensaje in canal_registro.history(
+                    async for mensaje in canal.history(
                         limit=None
                     ):
 
@@ -1192,8 +1029,7 @@ class Guerras(commands.Cog):
                 )
 
                 print(
-                    f"🎭 Roles de guerra limpiados "
-                    f"en {guild.name}"
+                    f"🎭 Roles de guerra limpiados en {guild.name}"
                 )
 
             except Exception as error:
@@ -1208,17 +1044,10 @@ class Guerras(commands.Cog):
     # ========================================================
 
     @commands.Cog.listener()
-    async def on_ready(
-        self
-    ):
+    async def on_ready(self):
 
         if self.scheduler.running:
             return
-
-        # ====================================================
-        # MIÉRCOLES 17:00
-        # PUBLICAR PANELES
-        # ====================================================
 
         self.scheduler.add_job(
             self.aviso_automatico,
@@ -1229,11 +1058,6 @@ class Guerras(commands.Cog):
             id="aviso_guerras",
             replace_existing=True
         )
-
-        # ====================================================
-        # LUNES 00:00
-        # BORRAR TODO
-        # ====================================================
 
         self.scheduler.add_job(
             self.limpiar_registro,
@@ -1256,9 +1080,7 @@ class Guerras(commands.Cog):
 # SETUP
 # ============================================================
 
-async def setup(
-    bot
-):
+async def setup(bot):
 
     await bot.add_cog(
         Guerras(bot)
@@ -1268,6 +1090,7 @@ async def setup(
     # VISTAS PERSISTENTES
     # ========================================================
 
+    # SÁBADO
     bot.add_view(
         GuerraView(
             "sábado",
@@ -1275,6 +1098,7 @@ async def setup(
         )
     )
 
+    # DOMINGO
     bot.add_view(
         GuerraDomingoView(
             obtener_fecha_guerra("domingo")
