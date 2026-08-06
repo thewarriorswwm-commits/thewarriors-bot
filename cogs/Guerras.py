@@ -1,7 +1,8 @@
 import discord
 from discord.ext import commands
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from zoneinfo import ZoneInfo
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 # ============================================================
@@ -13,192 +14,936 @@ CANAL_REGISTRO = "registro-guerra-📋"
 
 ZONA_HORARIA = ZoneInfo("Europe/Madrid")
 
+ROLES_GUERRA = [
+    "DPS",
+    "DPS Distancia",
+    "Healer",
+    "Tank",
+    "No asistiré"
+]
+
 
 # ============================================================
-# VISTA DEL PANEL
+# FECHAS
+# ============================================================
+
+def obtener_fecha_guerra(dia):
+
+    ahora = datetime.now(ZONA_HORARIA)
+    fecha_actual = ahora.date()
+
+    dias_semana = {
+        "lunes": 0,
+        "martes": 1,
+        "miércoles": 2,
+        "jueves": 3,
+        "viernes": 4,
+        "sábado": 5,
+        "domingo": 6
+    }
+
+    objetivo = dias_semana[dia.lower()]
+
+    diferencia = (
+        objetivo - fecha_actual.weekday()
+    ) % 7
+
+    return fecha_actual + timedelta(
+        days=diferencia
+    )
+
+
+def formatear_fecha(fecha):
+    return fecha.strftime("%d/%m/%Y")
+
+
+# ============================================================
+# CREAR / OBTENER ROLES
+# ============================================================
+
+async def asegurar_roles(guild):
+
+    roles = {}
+
+    for nombre in ROLES_GUERRA:
+
+        rol = discord.utils.get(
+            guild.roles,
+            name=nombre
+        )
+
+        if rol is None:
+
+            try:
+
+                rol = await guild.create_role(
+                    name=nombre,
+                    reason="Sistema de inscripción de guerras"
+                )
+
+                print(
+                    f"✅ Rol creado: {nombre}"
+                )
+
+            except discord.Forbidden:
+
+                print(
+                    f"❌ No puedo crear el rol: {nombre}"
+                )
+
+                continue
+
+            except discord.HTTPException as error:
+
+                print(
+                    f"❌ Error creando {nombre}: {error}"
+                )
+
+                continue
+
+        roles[nombre] = rol
+
+    return roles
+
+
+# ============================================================
+# BUSCAR REGISTRO EXISTENTE
+# ============================================================
+
+async def buscar_registro(
+    canal,
+    usuario_id,
+    fecha
+):
+
+    fecha_texto = formatear_fecha(fecha)
+
+    try:
+
+        async for mensaje in canal.history(
+            limit=None
+        ):
+
+            if mensaje.author != canal.guild.me:
+                continue
+
+            if not mensaje.embeds:
+                continue
+
+            embed = mensaje.embeds[0]
+
+            if embed.title != "⚔️ Registro de guerra":
+                continue
+
+            usuario_encontrado = False
+            fecha_encontrada = False
+
+            for campo in embed.fields:
+
+                if campo.name == "🆔 Usuario":
+
+                    if campo.value == str(usuario_id):
+                        usuario_encontrado = True
+
+                elif campo.name == "📅 Fecha":
+
+                    if campo.value == fecha_texto:
+                        fecha_encontrada = True
+
+            if usuario_encontrado and fecha_encontrada:
+
+                return mensaje
+
+    except discord.Forbidden:
+
+        print(
+            f"❌ No puedo leer #{CANAL_REGISTRO}."
+        )
+
+    return None
+
+
+# ============================================================
+# GUARDAR / ACTUALIZAR REGISTRO
+# ============================================================
+
+async def guardar_registro(
+    guild,
+    usuario,
+    rol,
+    dia,
+    fecha
+):
+
+    canal = discord.utils.get(
+        guild.text_channels,
+        name=CANAL_REGISTRO
+    )
+
+    if canal is None:
+
+        print(
+            f"❌ No existe #{CANAL_REGISTRO}"
+        )
+
+        return
+
+    registro_existente = await buscar_registro(
+        canal,
+        usuario.id,
+        fecha
+    )
+
+    fecha_texto = formatear_fecha(fecha)
+
+    embed = discord.Embed(
+        title="⚔️ Registro de guerra",
+        color=discord.Color.green()
+    )
+
+    embed.add_field(
+        name="👤 Nombre",
+        value=usuario.mention,
+        inline=False
+    )
+
+    embed.add_field(
+        name="🆔 Usuario",
+        value=str(usuario.id),
+        inline=False
+    )
+
+    embed.add_field(
+        name="🎭 Rol",
+        value=rol.mention,
+        inline=False
+    )
+
+    embed.add_field(
+        name="📆 Día",
+        value=dia.capitalize(),
+        inline=False
+    )
+
+    embed.add_field(
+        name="📅 Fecha",
+        value=fecha_texto,
+        inline=False
+    )
+
+    if registro_existente is not None:
+
+        try:
+
+            await registro_existente.edit(
+                embed=embed
+            )
+
+            print(
+                f"🔄 Registro actualizado: "
+                f"{usuario} — {dia} — {fecha_texto}"
+            )
+
+            return
+
+        except discord.HTTPException as error:
+
+            print(
+                f"❌ Error actualizando registro: {error}"
+            )
+
+    try:
+
+        await canal.send(
+            embed=embed
+        )
+
+        print(
+            f"📝 Registro creado: "
+            f"{usuario} — {dia} — {fecha_texto}"
+        )
+
+    except discord.Forbidden:
+
+        print(
+            f"❌ No puedo escribir en #{CANAL_REGISTRO}."
+        )
+
+    except discord.HTTPException as error:
+
+        print(
+            f"❌ Error creando registro: {error}"
+        )
+
+
+# ============================================================
+# PANEL DE GUERRA - SÁBADO
 # ============================================================
 
 class GuerraView(discord.ui.View):
 
-    def __init__(self, cog):
-        super().__init__(timeout=None)
-        self.cog = cog
+    def __init__(
+        self,
+        dia,
+        fecha
+    ):
+
+        super().__init__(
+            timeout=None
+        )
+
+        self.dia = dia
+        self.fecha = fecha
+
+    # ========================================================
+    # ELEGIR ROL
+    # ========================================================
+
+    async def elegir_rol(
+        self,
+        interaction,
+        nombre_rol
+    ):
+
+        guild = interaction.guild
+
+        if guild is None:
+
+            await interaction.response.send_message(
+                "❌ Este botón solo funciona dentro de un servidor.",
+                ephemeral=True
+            )
+
+            return
+
+        try:
+
+            roles = await asegurar_roles(
+                guild
+            )
+
+            rol_elegido = roles.get(
+                nombre_rol
+            )
+
+            if rol_elegido is None:
+
+                await interaction.response.send_message(
+                    "❌ No puedo encontrar o crear "
+                    "el rol de guerra.",
+                    ephemeral=True
+                )
+
+                return
+
+            # =================================================
+            # QUITAR OTROS ROLES DE GUERRA
+            # =================================================
+
+            for nombre, rol in roles.items():
+
+                if rol == rol_elegido:
+                    continue
+
+                if rol in interaction.user.roles:
+
+                    await interaction.user.remove_roles(
+                        rol,
+                        reason="Cambio de rol de guerra"
+                    )
+
+            # =================================================
+            # DAR ROL ELEGIDO
+            # =================================================
+
+            if rol_elegido not in interaction.user.roles:
+
+                await interaction.user.add_roles(
+                    rol_elegido,
+                    reason=(
+                        f"Inscripción guerra "
+                        f"{self.dia} "
+                        f"{formatear_fecha(self.fecha)}"
+                    )
+                )
+
+            # =================================================
+            # GUARDAR REGISTRO
+            # =================================================
+
+            await guardar_registro(
+                guild,
+                interaction.user,
+                rol_elegido,
+                self.dia,
+                self.fecha
+            )
+
+            # =================================================
+            # RESPUESTA
+            # =================================================
+
+            await interaction.response.send_message(
+                f"✅ **Inscripción realizada.**\n\n"
+                f"⚔️ Guerra: **{self.dia.capitalize()}**\n"
+                f"📅 Fecha: **{formatear_fecha(self.fecha)}**\n"
+                f"🎭 Rol: **{nombre_rol}**\n\n"
+                "Tu elección solo la puedes ver tú.",
+                ephemeral=True
+            )
+
+        except discord.Forbidden:
+
+            if not interaction.response.is_done():
+
+                await interaction.response.send_message(
+                    "❌ No puedo modificar tus roles.\n\n"
+                    "Comprueba que el rol del bot esté "
+                    "por encima de los roles de guerra.",
+                    ephemeral=True
+                )
+
+        except discord.HTTPException as error:
+
+            print(
+                f"❌ Error de Discord: {error}"
+            )
+
+            if not interaction.response.is_done():
+
+                await interaction.response.send_message(
+                    "❌ Discord no ha permitido realizar "
+                    "la inscripción.",
+                    ephemeral=True
+                )
+
+        except Exception as error:
+
+            print(
+                f"❌ Error en guerra: {error}"
+            )
+
+            if not interaction.response.is_done():
+
+                await interaction.response.send_message(
+                    "❌ Ha ocurrido un error al registrarte.",
+                    ephemeral=True
+                )
+
+    # ========================================================
+    # BOTONES
+    # ========================================================
 
     @discord.ui.button(
-        label="Registrar guerra",
+        label="DPS",
         emoji="⚔️",
         style=discord.ButtonStyle.danger,
-        custom_id="guerra_registrar"
+        custom_id="guerra_sabado_dps"
     )
-    async def registrar_guerra(
+    async def dps(
         self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
+        interaction,
+        button
     ):
-        await interaction.response.send_modal(
-            GuerraModal(self.cog)
+
+        await self.elegir_rol(
+            interaction,
+            "DPS"
+        )
+
+    @discord.ui.button(
+        label="DPS Distancia",
+        emoji="🏹",
+        style=discord.ButtonStyle.primary,
+        custom_id="guerra_sabado_dps_distancia"
+    )
+    async def dps_distancia(
+        self,
+        interaction,
+        button
+    ):
+
+        await self.elegir_rol(
+            interaction,
+            "DPS Distancia"
+        )
+
+    @discord.ui.button(
+        label="Healer",
+        emoji="💚",
+        style=discord.ButtonStyle.success,
+        custom_id="guerra_sabado_healer"
+    )
+    async def healer(
+        self,
+        interaction,
+        button
+    ):
+
+        await self.elegir_rol(
+            interaction,
+            "Healer"
+        )
+
+    @discord.ui.button(
+        label="Tank",
+        emoji="🛡️",
+        style=discord.ButtonStyle.secondary,
+        custom_id="guerra_sabado_tank"
+    )
+    async def tank(
+        self,
+        interaction,
+        button
+    ):
+
+        await self.elegir_rol(
+            interaction,
+            "Tank"
+        )
+
+    @discord.ui.button(
+        label="No asistiré",
+        emoji="❌",
+        style=discord.ButtonStyle.secondary,
+        custom_id="guerra_sabado_no_asistire"
+    )
+    async def no_asistire(
+        self,
+        interaction,
+        button
+    ):
+
+        await self.elegir_rol(
+            interaction,
+            "No asistiré"
         )
 
 
 # ============================================================
-# MODAL DE REGISTRO
+# VISTA DOMINGO
 # ============================================================
 
-class GuerraModal(
-    discord.ui.Modal,
-    title="Registrar guerra"
+class GuerraDomingoView(discord.ui.View):
+
+    def __init__(
+        self,
+        fecha
+    ):
+
+        super().__init__(
+            timeout=None
+        )
+
+        self.dia = "domingo"
+        self.fecha = fecha
+
+    async def elegir_rol(
+        self,
+        interaction,
+        nombre_rol
+    ):
+
+        guild = interaction.guild
+
+        if guild is None:
+
+            await interaction.response.send_message(
+                "❌ Este botón solo funciona dentro de un servidor.",
+                ephemeral=True
+            )
+
+            return
+
+        try:
+
+            roles = await asegurar_roles(
+                guild
+            )
+
+            rol_elegido = roles.get(
+                nombre_rol
+            )
+
+            if rol_elegido is None:
+
+                await interaction.response.send_message(
+                    "❌ No puedo encontrar o crear "
+                    "el rol de guerra.",
+                    ephemeral=True
+                )
+
+                return
+
+            for rol in roles.values():
+
+                if (
+                    rol != rol_elegido
+                    and rol in interaction.user.roles
+                ):
+
+                    await interaction.user.remove_roles(
+                        rol,
+                        reason="Cambio de rol de guerra"
+                    )
+
+            if rol_elegido not in interaction.user.roles:
+
+                await interaction.user.add_roles(
+                    rol_elegido,
+                    reason=(
+                        f"Inscripción guerra domingo "
+                        f"{formatear_fecha(self.fecha)}"
+                    )
+                )
+
+            await guardar_registro(
+                guild,
+                interaction.user,
+                rol_elegido,
+                self.dia,
+                self.fecha
+            )
+
+            await interaction.response.send_message(
+                f"✅ **Inscripción realizada.**\n\n"
+                f"⚔️ Guerra: **Domingo**\n"
+                f"📅 Fecha: **{formatear_fecha(self.fecha)}**\n"
+                f"🎭 Rol: **{nombre_rol}**\n\n"
+                "Tu elección solo la puedes ver tú.",
+                ephemeral=True
+            )
+
+        except discord.Forbidden:
+
+            if not interaction.response.is_done():
+
+                await interaction.response.send_message(
+                    "❌ No puedo modificar tus roles.",
+                    ephemeral=True
+                )
+
+        except discord.HTTPException as error:
+
+            print(
+                f"❌ Error de Discord: {error}"
+            )
+
+            if not interaction.response.is_done():
+
+                await interaction.response.send_message(
+                    "❌ Discord no ha permitido realizar "
+                    "la inscripción.",
+                    ephemeral=True
+                )
+
+        except Exception as error:
+
+            print(
+                f"❌ Error en guerra: {error}"
+            )
+
+            if not interaction.response.is_done():
+
+                await interaction.response.send_message(
+                    "❌ Ha ocurrido un error al registrarte.",
+                    ephemeral=True
+                )
+
+    @discord.ui.button(
+        label="DPS",
+        emoji="⚔️",
+        style=discord.ButtonStyle.danger,
+        custom_id="guerra_domingo_dps"
+    )
+    async def dps(
+        self,
+        interaction,
+        button
+    ):
+
+        await self.elegir_rol(
+            interaction,
+            "DPS"
+        )
+
+    @discord.ui.button(
+        label="DPS Distancia",
+        emoji="🏹",
+        style=discord.ButtonStyle.primary,
+        custom_id="guerra_domingo_dps_distancia"
+    )
+    async def dps_distancia(
+        self,
+        interaction,
+        button
+    ):
+
+        await self.elegir_rol(
+            interaction,
+            "DPS Distancia"
+        )
+
+    @discord.ui.button(
+        label="Healer",
+        emoji="💚",
+        style=discord.ButtonStyle.success,
+        custom_id="guerra_domingo_healer"
+    )
+    async def healer(
+        self,
+        interaction,
+        button
+    ):
+
+        await self.elegir_rol(
+            interaction,
+            "Healer"
+        )
+
+    @discord.ui.button(
+        label="Tank",
+        emoji="🛡️",
+        style=discord.ButtonStyle.secondary,
+        custom_id="guerra_domingo_tank"
+    )
+    async def tank(
+        self,
+        interaction,
+        button
+    ):
+
+        await self.elegir_rol(
+            interaction,
+            "Tank"
+        )
+
+    @discord.ui.button(
+        label="No asistiré",
+        emoji="❌",
+        style=discord.ButtonStyle.secondary,
+        custom_id="guerra_domingo_no_asistire"
+    )
+    async def no_asistire(
+        self,
+        interaction,
+        button
+    ):
+
+        await self.elegir_rol(
+            interaction,
+            "No asistiré"
+        )
+
+
+# ============================================================
+# PUBLICAR PANELES
+# ============================================================
+
+async def publicar_paneles(
+    guild
 ):
 
-    rival = discord.ui.TextInput(
-        label="Rival",
-        placeholder="Nombre del rival",
-        required=True,
-        max_length=100
+    canal = discord.utils.get(
+        guild.text_channels,
+        name=CANAL_GUERRAS
     )
 
-    fecha = discord.ui.TextInput(
-        label="Fecha",
-        placeholder="Ejemplo: 06/08/2026",
-        required=True,
-        max_length=20
-    )
+    if canal is None:
 
-    hora = discord.ui.TextInput(
-        label="Hora",
-        placeholder="Ejemplo: 22:00",
-        required=True,
-        max_length=10
-    )
-
-    jugadores = discord.ui.TextInput(
-        label="Jugadores",
-        placeholder="Ejemplo: 10",
-        required=True,
-        max_length=10
-    )
-
-    notas = discord.ui.TextInput(
-        label="Notas",
-        placeholder="Información adicional",
-        required=False,
-        style=discord.TextStyle.paragraph,
-        max_length=500
-    )
-
-    def __init__(self, cog):
-        super().__init__()
-        self.cog = cog
-
-    async def on_submit(
-        self,
-        interaction: discord.Interaction
-    ):
-
-        # ====================================================
-        # FECHA Y HORA
-        # ====================================================
-
-        try:
-
-            fecha_hora = datetime.strptime(
-                f"{self.fecha.value.strip()} "
-                f"{self.hora.value.strip()}",
-                "%d/%m/%Y %H:%M"
-            ).replace(
-                tzinfo=ZONA_HORARIA
-            )
-
-        except ValueError:
-
-            await interaction.response.send_message(
-                "❌ Fecha u hora incorrectas.\n"
-                "Ejemplo: `06/08/2026` y `22:00`.",
-                ephemeral=True
-            )
-
-            return
-
-        # ====================================================
-        # COMPROBAR FECHA
-        # ====================================================
-
-        ahora = datetime.now(
-            ZONA_HORARIA
+        print(
+            f"❌ No encuentro #{CANAL_GUERRAS}"
         )
 
-        if fecha_hora <= ahora:
+        return False
 
-            await interaction.response.send_message(
-                "❌ La fecha de la guerra debe ser futura.",
-                ephemeral=True
-            )
+    # ========================================================
+    # COMPROBAR PERMISOS DEL BOT
+    # ========================================================
 
-            return
+    if guild.me is None:
 
-        # ====================================================
-        # DATOS
-        # ====================================================
-
-        datos = {
-            "rival": self.rival.value.strip(),
-            "fecha": fecha_hora,
-            "jugadores": self.jugadores.value.strip(),
-            "notas": self.notas.value.strip()
-        }
-
-        # ====================================================
-        # GUARDAR
-        # ====================================================
-
-        self.cog.guerras.append(datos)
-
-        # ====================================================
-        # RESPUESTA
-        # ====================================================
-
-        await interaction.response.send_message(
-            "✅ **Guerra registrada correctamente.**\n"
-            "📋 Se enviará automáticamente al registro.",
-            ephemeral=True
+        print(
+            "❌ No encuentro al bot dentro del servidor."
         )
 
-        # ====================================================
-        # REGISTRO AUTOMÁTICO
-        # ====================================================
+        return False
+
+    permisos = canal.permissions_for(
+        guild.me
+    )
+
+    if not permisos.view_channel:
+
+        print(
+            f"❌ El bot no puede ver #{CANAL_GUERRAS}"
+        )
+
+        return False
+
+    if not permisos.send_messages:
+
+        print(
+            f"❌ El bot no puede escribir en #{CANAL_GUERRAS}"
+        )
+
+        return False
+
+    # ========================================================
+    # FECHAS
+    # ========================================================
+
+    fecha_sabado = obtener_fecha_guerra(
+        "sábado"
+    )
+
+    fecha_domingo = obtener_fecha_guerra(
+        "domingo"
+    )
+
+    await asegurar_roles(
+        guild
+    )
+
+    # ========================================================
+    # AVISO
+    # ========================================================
+
+    await canal.send(
+        "🔔 **INSCRIPCIONES ABIERTAS**\n\n"
+        f"⚔️ **Sábado — {formatear_fecha(fecha_sabado)}**\n"
+        f"⚔️ **Domingo — {formatear_fecha(fecha_domingo)}**\n\n"
+        "Ya puedes apuntarte a las próximas guerras.\n\n"
+        "Selecciona tu rol en el panel correspondiente."
+    )
+
+    # ========================================================
+    # SÁBADO
+    # ========================================================
+
+    embed_sabado = discord.Embed(
+        title="⚔️ GUERRA — SÁBADO",
+        description=(
+            "### 📋 INSCRIPCIÓN\n\n"
+            f"📅 **Fecha: {formatear_fecha(fecha_sabado)}**\n\n"
+            "Selecciona tu rol:\n\n"
+            "⚔️ **DPS**\n"
+            "🏹 **DPS Distancia**\n"
+            "💚 **Healer**\n"
+            "🛡️ **Tank**\n"
+            "❌ **No asistiré**\n\n"
+            "🕢 **19:30**\n"
+            "Preferiblemente estar en llamada "
+            "para organizar el sistema.\n\n"
+            "🕣 **20:30**\n"
+            "Comienza la guerra."
+        ),
+        color=discord.Color.blue()
+    )
+
+    embed_sabado.set_footer(
+        text="Guerra del sábado"
+    )
+
+    await canal.send(
+        embed=embed_sabado,
+        view=GuerraView(
+            "sábado",
+            fecha_sabado
+        )
+    )
+
+    # ========================================================
+    # DOMINGO
+    # ========================================================
+
+    embed_domingo = discord.Embed(
+        title="⚔️ GUERRA — DOMINGO",
+        description=(
+            "### 📋 INSCRIPCIÓN\n\n"
+            f"📅 **Fecha: {formatear_fecha(fecha_domingo)}**\n\n"
+            "Selecciona tu rol:\n\n"
+            "⚔️ **DPS**\n"
+            "🏹 **DPS Distancia**\n"
+            "💚 **Healer**\n"
+            "🛡️ **Tank**\n"
+            "❌ **No asistiré**\n\n"
+            "🕢 **19:30**\n"
+            "Preferiblemente estar en llamada "
+            "para organizar el sistema.\n\n"
+            "🕣 **20:30**\n"
+            "Comienza la guerra."
+        ),
+        color=discord.Color.purple()
+    )
+
+    embed_domingo.set_footer(
+        text="Guerra del domingo"
+    )
+
+    await canal.send(
+        embed=embed_domingo,
+        view=GuerraDomingoView(
+            fecha_domingo
+        )
+    )
+
+    print(
+        f"✅ Paneles de guerra publicados en {guild.name}"
+    )
+
+    return True
+
+
+# ============================================================
+# LIMPIAR ROLES DE GUERRA
+# ============================================================
+
+async def limpiar_roles_guerra(
+    guild
+):
+
+    roles = await asegurar_roles(
+        guild
+    )
+
+    for miembro in guild.members:
+
+        roles_a_quitar = [
+            rol
+            for rol in roles.values()
+            if rol in miembro.roles
+        ]
+
+        if not roles_a_quitar:
+            continue
 
         try:
 
-            await self.cog.enviar_registro(
-                interaction.guild,
-                interaction.user,
-                datos
+            await miembro.remove_roles(
+                *roles_a_quitar,
+                reason="Limpieza semanal de roles de guerra"
             )
-
-        except Exception as e:
 
             print(
-                f"[GUERRAS] ERROR REGISTRO: {e}"
+                f"🧹 Roles de guerra eliminados de {miembro}"
             )
 
-        # ====================================================
-        # ACTUALIZAR PANEL
-        # ====================================================
-
-        try:
-
-            await self.cog.actualizar_guerras(
-                interaction.guild
-            )
-
-        except Exception as e:
+        except discord.Forbidden:
 
             print(
-                f"[GUERRAS] ERROR PANEL: {e}"
+                f"❌ No puedo quitar roles de {miembro}"
+            )
+
+        except discord.HTTPException as error:
+
+            print(
+                f"❌ Error quitando roles de {miembro}: {error}"
             )
 
 
 # ============================================================
-# COG
+# COG GUERRAS
 # ============================================================
 
 class Guerras(commands.Cog):
@@ -210,462 +955,99 @@ class Guerras(commands.Cog):
 
         self.bot = bot
 
-        self.guerras = []
+        self.scheduler = AsyncIOScheduler(
+            timezone=ZONA_HORARIA
+        )
+
+        print(
+            "🟢 Guerras.py cargado"
+        )
 
     # ========================================================
-    # BUSCAR CANAL
-    # ========================================================
-
-    def obtener_canal(
-        self,
-        guild,
-        nombre
-    ):
-
-        if guild is None:
-            return None
-
-        # Búsqueda exacta
-        canal = discord.utils.get(
-            guild.text_channels,
-            name=nombre
-        )
-
-        if canal:
-            return canal
-
-        # Segunda búsqueda
-        for canal in guild.text_channels:
-
-            if canal.name.strip() == nombre.strip():
-
-                return canal
-
-        return None
-
-    # ========================================================
-    # ENVIAR REGISTRO AUTOMÁTICAMENTE
-    # ========================================================
-
-    async def enviar_registro(
-        self,
-        guild,
-        usuario,
-        guerra
-    ):
-
-        if guild is None:
-            return
-
-        canal = self.obtener_canal(
-            guild,
-            CANAL_REGISTRO
-        )
-
-        if canal is None:
-
-            print(
-                f"[GUERRAS] ❌ NO EXISTE: "
-                f"{CANAL_REGISTRO}"
-            )
-
-            return
-
-        # ====================================================
-        # PERMISOS
-        # ====================================================
-
-        bot_member = guild.me
-
-        if bot_member is None:
-            return
-
-        permisos = canal.permissions_for(
-            bot_member
-        )
-
-        if not permisos.view_channel:
-
-            print(
-                f"[GUERRAS] ❌ NO PUEDE VER: "
-                f"{CANAL_REGISTRO}"
-            )
-
-            return
-
-        if not permisos.send_messages:
-
-            print(
-                f"[GUERRAS] ❌ NO PUEDE ESCRIBIR: "
-                f"{CANAL_REGISTRO}"
-            )
-
-            return
-
-        # ====================================================
-        # FECHA
-        # ====================================================
-
-        fecha = guerra["fecha"].astimezone(
-            ZONA_HORARIA
-        )
-
-        # ====================================================
-        # EMBED
-        # ====================================================
-
-        embed = discord.Embed(
-            title="📋 Registro de guerra",
-            description="⚔️ **Nueva guerra registrada**",
-            timestamp=datetime.now(
-                ZONA_HORARIA
-            )
-        )
-
-        embed.add_field(
-            name="⚔️ Rival",
-            value=guerra["rival"],
-            inline=False
-        )
-
-        embed.add_field(
-            name="📅 Fecha",
-            value=fecha.strftime(
-                "%d/%m/%Y"
-            ),
-            inline=True
-        )
-
-        embed.add_field(
-            name="🕐 Hora",
-            value=fecha.strftime(
-                "%H:%M"
-            ),
-            inline=True
-        )
-
-        embed.add_field(
-            name="👥 Jugadores",
-            value=guerra["jugadores"],
-            inline=True
-        )
-
-        if guerra["notas"]:
-
-            embed.add_field(
-                name="📝 Notas",
-                value=guerra["notas"],
-                inline=False
-            )
-
-        embed.add_field(
-            name="👤 Registrada por",
-            value=usuario.mention,
-            inline=False
-        )
-
-        embed.set_footer(
-            text="The Warriors • Registro de guerras"
-        )
-
-        # ====================================================
-        # ENVIAR
-        # ====================================================
-
-        try:
-
-            await canal.send(
-                embed=embed
-            )
-
-            print(
-                f"[GUERRAS] ✅ REGISTRO ENVIADO A "
-                f"#{CANAL_REGISTRO}"
-            )
-
-        except discord.Forbidden:
-
-            print(
-                f"[GUERRAS] ❌ SIN PERMISOS EN "
-                f"#{CANAL_REGISTRO}"
-            )
-
-        except discord.HTTPException as e:
-
-            print(
-                f"[GUERRAS] ❌ ERROR DISCORD: {e}"
-            )
-
-    # ========================================================
-    # ACTUALIZAR PANEL
-    # ========================================================
-
-    async def actualizar_guerras(
-        self,
-        guild
-    ):
-
-        if guild is None:
-
-            print(
-                "[GUERRAS] ❌ GUILD ES NONE"
-            )
-
-            return False
-
-        # ====================================================
-        # BUSCAR CANAL
-        # ====================================================
-
-        canal = self.obtener_canal(
-            guild,
-            CANAL_GUERRAS
-        )
-
-        if canal is None:
-
-            print(
-                f"[GUERRAS] ❌ NO EXISTE EL CANAL: "
-                f"{CANAL_GUERRAS}"
-            )
-
-            return False
-
-        # ====================================================
-        # COMPROBAR PERMISOS
-        # ====================================================
-
-        bot_member = guild.me
-
-        if bot_member is None:
-
-            print(
-                "[GUERRAS] ❌ NO SE ENCUENTRA EL BOT"
-            )
-
-            return False
-
-        permisos = canal.permissions_for(
-            bot_member
-        )
-
-        if not permisos.view_channel:
-
-            print(
-                f"[GUERRAS] ❌ NO PUEDE VER "
-                f"#{CANAL_GUERRAS}"
-            )
-
-            return False
-
-        if not permisos.send_messages:
-
-            print(
-                f"[GUERRAS] ❌ NO PUEDE ESCRIBIR "
-                f"#{CANAL_GUERRAS}"
-            )
-
-            return False
-
-        # ====================================================
-        # BORRAR PANELES ANTERIORES DEL BOT
-        # ====================================================
-
-        try:
-
-            async for mensaje in canal.history(
-                limit=50
-            ):
-
-                if mensaje.author == self.bot.user:
-
-                    try:
-
-                        await mensaje.delete()
-
-                    except (
-                        discord.Forbidden,
-                        discord.HTTPException
-                    ):
-
-                        pass
-
-        except discord.Forbidden:
-
-            print(
-                f"[GUERRAS] ⚠️ NO PUEDE LEER HISTORIAL "
-                f"#{CANAL_GUERRAS}"
-            )
-
-        except Exception as e:
-
-            print(
-                f"[GUERRAS] ⚠️ ERROR HISTORIAL: {e}"
-            )
-
-        # ====================================================
-        # CREAR EMBED
-        # ====================================================
-
-        embed = discord.Embed(
-            title="⚔️ Guerras",
-            description=(
-                "Aquí puedes registrar las próximas guerras "
-                "de **The Warriors**.\n\n"
-                "Pulsa **Registrar guerra** para añadir una."
-            )
-        )
-
-        # ====================================================
-        # MOSTRAR GUERRAS
-        # ====================================================
-
-        if self.guerras:
-
-            for numero, guerra in enumerate(
-                self.guerras,
-                start=1
-            ):
-
-                fecha = guerra["fecha"].astimezone(
-                    ZONA_HORARIA
-                )
-
-                texto = (
-                    f"⚔️ **Rival:** {guerra['rival']}\n"
-                    f"📅 **Fecha:** "
-                    f"{fecha.strftime('%d/%m/%Y')}\n"
-                    f"🕐 **Hora:** "
-                    f"{fecha.strftime('%H:%M')}\n"
-                    f"👥 **Jugadores:** "
-                    f"{guerra['jugadores']}"
-                )
-
-                if guerra["notas"]:
-
-                    texto += (
-                        f"\n📝 **Notas:** "
-                        f"{guerra['notas']}"
-                    )
-
-                embed.add_field(
-                    name=f"⚔️ Guerra #{numero}",
-                    value=texto,
-                    inline=False
-                )
-
-        else:
-
-            embed.add_field(
-                name="📭 No hay guerras registradas",
-                value=(
-                    "Todavía no hay ninguna guerra programada."
-                ),
-                inline=False
-            )
-
-        # ====================================================
-        # ENVIAR PANEL
-        # ====================================================
-
-        try:
-
-            await canal.send(
-                embed=embed,
-                view=GuerraView(self)
-            )
-
-            print(
-                f"[GUERRAS] ✅ PANEL ENVIADO A "
-                f"#{CANAL_GUERRAS}"
-            )
-
-            return True
-
-        except discord.Forbidden:
-
-            print(
-                f"[GUERRAS] ❌ DISCORD RECHAZÓ EL ENVÍO "
-                f"EN #{CANAL_GUERRAS}"
-            )
-
-            return False
-
-        except discord.HTTPException as e:
-
-            print(
-                f"[GUERRAS] ❌ ERROR DISCORD PANEL: {e}"
-            )
-
-            return False
-
-        except Exception as e:
-
-            print(
-                f"[GUERRAS] ❌ ERROR PANEL: {e}"
-            )
-
-            return False
-
-    # ========================================================
-    # COMANDO !GUERRAS
+    # COMANDO MANUAL
+    # !guerras
+    # !panelguerra
     # ========================================================
 
     @commands.command(
-        name="guerras"
+        name="guerras",
+        aliases=["panelguerra"]
     )
     @commands.has_permissions(
         administrator=True
     )
-    async def guerras_command(
+    async def panel_guerra(
         self,
         ctx
     ):
 
+        if ctx.guild is None:
+
+            await ctx.send(
+                "❌ Este comando solo funciona dentro de un servidor."
+            )
+
+            return
+
         try:
 
-            resultado = await self.actualizar_guerras(
+            resultado = await publicar_paneles(
                 ctx.guild
             )
 
             if resultado:
 
                 await ctx.send(
-                    "✅ **Panel de guerras enviado correctamente.**",
+                    "✅ **Paneles de guerra lanzados correctamente "
+                    "en #guerras-⚔️.**",
                     delete_after=5
                 )
 
             else:
 
                 await ctx.send(
-                    "❌ **No se pudo enviar el panel.**\n"
+                    "❌ **No se pudieron lanzar los paneles.**\n"
                     "Mira la consola del bot para ver el motivo.",
-                    delete_after=15
+                    delete_after=10
                 )
 
-        except Exception as e:
+        except discord.Forbidden:
 
-            print(
-                f"[GUERRAS] ❌ ERROR EN !GUERRAS: {e}"
+            await ctx.send(
+                "❌ El bot no tiene permisos para publicar "
+                "en `#guerras-⚔️`.",
+                delete_after=10
             )
 
-            try:
+        except discord.HTTPException as error:
 
-                await ctx.send(
-                    f"❌ **Error en `!guerras`:**\n"
-                    f"```{e}```",
-                    delete_after=15
-                )
+            print(
+                f"❌ Error lanzando panel manual: {error}"
+            )
 
-            except discord.HTTPException:
-                pass
+            await ctx.send(
+                "❌ Discord rechazó el envío del panel.",
+                delete_after=10
+            )
+
+        except Exception as error:
+
+            print(
+                f"❌ Error lanzando panel manual: {error}"
+            )
+
+            await ctx.send(
+                f"❌ Error al lanzar el panel:\n"
+                f"```{error}```",
+                delete_after=15
+            )
 
     # ========================================================
     # ERROR DEL COMANDO
     # ========================================================
 
-    @guerras_command.error
-    async def guerras_command_error(
+    @panel_guerra.error
+    async def panel_guerra_error(
         self,
         ctx,
         error
@@ -677,14 +1059,15 @@ class Guerras(commands.Cog):
         ):
 
             await ctx.send(
-                "❌ No tienes permisos para usar `!guerras`.",
+                "❌ Necesitas ser administrador para usar "
+                "`!guerras`.",
                 delete_after=10
             )
 
             return
 
         print(
-            f"[GUERRAS] ❌ ERROR DEL COMANDO: {error}"
+            f"❌ Error en !guerras: {error}"
         )
 
         try:
@@ -698,14 +1081,207 @@ class Guerras(commands.Cog):
         except discord.HTTPException:
             pass
 
+    # ========================================================
+    # AUTOMÁTICO — MIÉRCOLES 17:00
+    # ========================================================
+
+    async def aviso_automatico(
+        self
+    ):
+
+        for guild in self.bot.guilds:
+
+            try:
+
+                await publicar_paneles(
+                    guild
+                )
+
+            except Exception as error:
+
+                print(
+                    f"❌ Error en {guild.name}: {error}"
+                )
+
+    # ========================================================
+    # LIMPIAR — LUNES 00:00
+    #
+    # BORRA:
+    # 1. REGISTROS
+    # 2. PANELES DE GUERRA
+    # 3. ROLES DE GUERRA
+    # ========================================================
+
+    async def limpiar_registro(
+        self
+    ):
+
+        for guild in self.bot.guilds:
+
+            # =================================================
+            # BORRAR REGISTRO
+            # =================================================
+
+            canal_registro = discord.utils.get(
+                guild.text_channels,
+                name=CANAL_REGISTRO
+            )
+
+            if canal_registro is not None:
+
+                try:
+
+                    async for mensaje in canal_registro.history(
+                        limit=None
+                    ):
+
+                        if mensaje.author == self.bot.user:
+
+                            await mensaje.delete()
+
+                    print(
+                        f"🧹 Registro limpiado en {guild.name}"
+                    )
+
+                except Exception as error:
+
+                    print(
+                        f"❌ Error limpiando registro: {error}"
+                    )
+
+            # =================================================
+            # BORRAR PANELES DE GUERRA
+            # =================================================
+
+            canal_guerras = discord.utils.get(
+                guild.text_channels,
+                name=CANAL_GUERRAS
+            )
+
+            if canal_guerras is not None:
+
+                try:
+
+                    async for mensaje in canal_guerras.history(
+                        limit=None
+                    ):
+
+                        if mensaje.author == self.bot.user:
+
+                            await mensaje.delete()
+
+                    print(
+                        f"🗑️ Paneles de guerra borrados "
+                        f"en {guild.name}"
+                    )
+
+                except Exception as error:
+
+                    print(
+                        f"❌ Error borrando paneles de guerra: {error}"
+                    )
+
+            # =================================================
+            # LIMPIAR ROLES
+            # =================================================
+
+            try:
+
+                await limpiar_roles_guerra(
+                    guild
+                )
+
+                print(
+                    f"🎭 Roles de guerra limpiados "
+                    f"en {guild.name}"
+                )
+
+            except Exception as error:
+
+                print(
+                    f"❌ Error limpiando roles en "
+                    f"{guild.name}: {error}"
+                )
+
+    # ========================================================
+    # BOT READY
+    # ========================================================
+
+    @commands.Cog.listener()
+    async def on_ready(
+        self
+    ):
+
+        if self.scheduler.running:
+            return
+
+        # ====================================================
+        # MIÉRCOLES 17:00
+        # PUBLICAR PANELES
+        # ====================================================
+
+        self.scheduler.add_job(
+            self.aviso_automatico,
+            "cron",
+            day_of_week="wed",
+            hour=17,
+            minute=0,
+            id="aviso_guerras",
+            replace_existing=True
+        )
+
+        # ====================================================
+        # LUNES 00:00
+        # BORRAR TODO
+        # ====================================================
+
+        self.scheduler.add_job(
+            self.limpiar_registro,
+            "cron",
+            day_of_week="mon",
+            hour=0,
+            minute=0,
+            id="limpiar_registro",
+            replace_existing=True
+        )
+
+        self.scheduler.start()
+
+        print(
+            "⚔️ Sistema automático de guerras iniciado."
+        )
+
 
 # ============================================================
 # SETUP
 # ============================================================
 
-async def setup(bot):
+async def setup(
+    bot
+):
 
     await bot.add_cog(
         Guerras(bot)
+    )
+
+    # ========================================================
+    # VISTAS PERSISTENTES
+    # ========================================================
+
+    bot.add_view(
+        GuerraView(
+            "sábado",
+            obtener_fecha_guerra("sábado")
+        )
+    )
+
+    bot.add_view(
+        GuerraDomingoView(
+            obtener_fecha_guerra("domingo")
+        )
+    )
+
+    print(
+        "✅ Guerras.py instalado correctamente."
     )
 
