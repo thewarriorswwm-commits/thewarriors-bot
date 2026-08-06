@@ -3,13 +3,12 @@ from discord.ext import commands
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from zoneinfo import ZoneInfo
 
-
 # ============================================================
 # CONFIGURACIÓN
 # ============================================================
 
 CANAL_GUERRAS = "guerras-⚔️"
-CANAL_REGISTRO = "registro-guerra"
+CANAL_REGISTRO = "registro-guerra-📋"
 
 ZONA_HORARIA = ZoneInfo("Europe/Madrid")
 
@@ -124,13 +123,13 @@ async def buscar_registro(
     except discord.Forbidden:
 
         print(
-            "❌ No puedo leer #registro-guerra."
+            "❌ No puedo leer #registro-guerra-📋."
         )
 
     except discord.HTTPException as error:
 
         print(
-            f"❌ Error leyendo #registro-guerra: {error}"
+            f"❌ Error leyendo #registro-guerra-📋: {error}"
         )
 
     return None
@@ -155,7 +154,7 @@ async def guardar_registro(
     if canal is None:
 
         print(
-            "❌ No existe #registro-guerra"
+            "❌ No existe #registro-guerra-📋"
         )
 
         return
@@ -248,7 +247,7 @@ async def guardar_registro(
     except discord.Forbidden:
 
         print(
-            "❌ No puedo escribir en #registro-guerra."
+            "❌ No puedo escribir en #registro-guerra-📋."
         )
 
     except discord.HTTPException as error:
@@ -754,7 +753,7 @@ class Guerras(
 
                     print(
                         "❌ No tengo permisos para "
-                        "limpiar #registro-guerra."
+                        "limpiar #registro-guerra-📋."
                     )
 
                 except discord.HTTPException as error:
@@ -892,4 +891,3 @@ async def setup(
     print(
         "✅ Guerras.py instalado correctamente."
     )
-
