@@ -86,6 +86,7 @@ async def asegurar_roles(guild):
                 print(
                     f"❌ No puedo crear el rol: {nombre}"
                 )
+
                 continue
 
             except discord.HTTPException as error:
@@ -93,6 +94,7 @@ async def asegurar_roles(guild):
                 print(
                     f"❌ Error creando {nombre}: {error}"
                 )
+
                 continue
 
         roles[nombre] = rol
@@ -137,14 +139,17 @@ async def buscar_registro(
                 if campo.name == "🆔 Usuario":
 
                     if campo.value == str(usuario_id):
+
                         usuario_encontrado = True
 
                 elif campo.name == "📅 Fecha":
 
                     if campo.value == fecha_texto:
+
                         fecha_encontrada = True
 
             if usuario_encontrado and fecha_encontrada:
+
                 return mensaje
 
     except discord.Forbidden:
@@ -174,6 +179,10 @@ async def guardar_registro(
     fecha
 ):
 
+    # ========================================================
+    # BUSCAR CANAL
+    # ========================================================
+
     canal = discord.utils.get(
         guild.text_channels,
         name=CANAL_REGISTRO
@@ -182,10 +191,84 @@ async def guardar_registro(
     if canal is None:
 
         print(
-            f"❌ No existe #{CANAL_REGISTRO}"
+            f"❌ NO ENCUENTRO EL CANAL: #{CANAL_REGISTRO}"
         )
 
-        return
+        parecidos = [
+            c.name
+            for c in guild.text_channels
+            if "registro" in c.name.lower()
+        ]
+
+        if parecidos:
+
+            print(
+                f"🔎 Canales encontrados: {parecidos}"
+            )
+
+        return False
+
+    print(
+        f"📋 Canal de registro encontrado: #{canal.name}"
+    )
+
+    # ========================================================
+    # COMPROBAR BOT
+    # ========================================================
+
+    bot_member = guild.me
+
+    if bot_member is None:
+
+        print(
+            "❌ No puedo obtener al bot dentro del servidor."
+        )
+
+        return False
+
+    # ========================================================
+    # COMPROBAR PERMISOS
+    # ========================================================
+
+    permisos = canal.permissions_for(bot_member)
+
+    if not permisos.view_channel:
+
+        print(
+            f"❌ EL BOT NO PUEDE VER #{canal.name}"
+        )
+
+        return False
+
+    if not permisos.send_messages:
+
+        print(
+            f"❌ EL BOT NO PUEDE ESCRIBIR EN #{canal.name}"
+        )
+
+        return False
+
+    if not permisos.embed_links:
+
+        print(
+            f"❌ EL BOT NO TIENE 'INSERTAR ENLACES' "
+            f"EN #{canal.name}"
+        )
+
+        return False
+
+    if not permisos.read_message_history:
+
+        print(
+            f"❌ EL BOT NO TIENE 'LEER HISTORIAL' "
+            f"EN #{canal.name}"
+        )
+
+        return False
+
+    # ========================================================
+    # BUSCAR REGISTRO EXISTENTE
+    # ========================================================
 
     registro_existente = await buscar_registro(
         canal,
@@ -194,6 +277,10 @@ async def guardar_registro(
     )
 
     fecha_texto = formatear_fecha(fecha)
+
+    # ========================================================
+    # CREAR EMBED
+    # ========================================================
 
     embed = discord.Embed(
         title="⚔️ Registro de guerra",
@@ -230,6 +317,10 @@ async def guardar_registro(
         inline=False
     )
 
+    # ========================================================
+    # ACTUALIZAR REGISTRO EXISTENTE
+    # ========================================================
+
     if registro_existente is not None:
 
         try:
@@ -239,11 +330,19 @@ async def guardar_registro(
             )
 
             print(
-                f"🔄 Registro actualizado: "
+                f"🔄 REGISTRO ACTUALIZADO: "
                 f"{usuario} — {dia} — {fecha_texto}"
             )
 
-            return
+            return True
+
+        except discord.Forbidden:
+
+            print(
+                "❌ Discord no permite editar el registro."
+            )
+
+            return False
 
         except discord.HTTPException as error:
 
@@ -251,28 +350,72 @@ async def guardar_registro(
                 f"❌ Error actualizando registro: {error}"
             )
 
+            return False
+
+    # ========================================================
+    # CREAR NUEVO REGISTRO
+    # ========================================================
+
     try:
 
-        await canal.send(
+        mensaje = await canal.send(
             embed=embed
         )
 
         print(
-            f"📝 Registro creado: "
-            f"{usuario} — {dia} — {fecha_texto}"
+            "✅ REGISTRO ENVIADO CORRECTAMENTE"
         )
+
+        print(
+            f"   👤 Usuario: {usuario}"
+        )
+
+        print(
+            f"   🎭 Rol: {rol.name}"
+        )
+
+        print(
+            f"   ⚔️ Día: {dia}"
+        )
+
+        print(
+            f"   📅 Fecha: {fecha_texto}"
+        )
+
+        print(
+            f"   🆔 Mensaje ID: {mensaje.id}"
+        )
+
+        return True
 
     except discord.Forbidden:
 
         print(
-            f"❌ No puedo escribir en #{CANAL_REGISTRO}."
+            f"❌ DISCORD HA BLOQUEADO EL ENVÍO "
+            f"EN #{canal.name}"
         )
+
+        print(
+            "⚠️ Revisa los permisos del bot."
+        )
+
+        return False
 
     except discord.HTTPException as error:
 
         print(
-            f"❌ Error creando registro: {error}"
+            f"❌ ERROR DE DISCORD ENVIANDO REGISTRO: {error}"
         )
+
+        return False
+
+    except Exception as error:
+
+        print(
+            f"❌ ERROR INESPERADO EN REGISTRO: {error}"
+        )
+
+        return False
 
 
 # ============================================================
@@ -298,6 +441,10 @@ async def procesar_inscripcion(
         return
 
     try:
+
+        # ====================================================
+        # ASEGURAR ROLES
+        # ====================================================
 
         roles = await asegurar_roles(guild)
 
@@ -348,7 +495,7 @@ async def procesar_inscripcion(
         # GUARDAR REGISTRO
         # ====================================================
 
-        await guardar_registro(
+        registro_guardado = await guardar_registro(
             guild,
             interaction.user,
             rol_elegido,
@@ -357,7 +504,24 @@ async def procesar_inscripcion(
         )
 
         # ====================================================
-        # RESPUESTA
+        # SI NO SE GUARDA
+        # ====================================================
+
+        if not registro_guardado:
+
+            await interaction.response.send_message(
+                "⚠️ **Te has inscrito correctamente**, "
+                "pero el registro no pudo guardarse en "
+                f"#{CANAL_REGISTRO}.\n\n"
+                "El administrador debe revisar los "
+                "permisos del bot en ese canal.",
+                ephemeral=True
+            )
+
+            return
+
+        # ====================================================
+        # RESPUESTA CORRECTA
         # ====================================================
 
         await interaction.response.send_message(
@@ -807,6 +971,7 @@ async def borrar_mensajes_del_bot(canal):
                 await mensaje.delete()
 
             except discord.NotFound:
+
                 pass
 
         return True
@@ -926,7 +1091,7 @@ class Guerras(commands.Cog):
         for guild in self.bot.guilds:
 
             # =================================================
-            # 🗑️ BORRAR REGISTROS
+            # BORRAR REGISTROS
             # =================================================
 
             canal_registro = discord.utils.get(
@@ -953,7 +1118,7 @@ class Guerras(commands.Cog):
                 )
 
             # =================================================
-            # 🗑️ BORRAR PANELES
+            # BORRAR PANELES
             # =================================================
 
             canal_guerras = discord.utils.get(
@@ -981,7 +1146,7 @@ class Guerras(commands.Cog):
                 )
 
             # =================================================
-            # 🎭 QUITAR ROLES
+            # QUITAR ROLES
             # =================================================
 
             try:
@@ -1062,6 +1227,7 @@ async def setup(bot):
     # ========================================================
 
     # SÁBADO
+
     bot.add_view(
         GuerraSabadoView(
             obtener_fecha_guerra("sábado")
@@ -1069,6 +1235,7 @@ async def setup(bot):
     )
 
     # DOMINGO
+
     bot.add_view(
         GuerraDomingoView(
             obtener_fecha_guerra("domingo")
@@ -1078,3 +1245,4 @@ async def setup(bot):
     print(
         "✅ Guerras.py instalado correctamente."
     )
+
