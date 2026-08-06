@@ -777,4 +777,3 @@ async def setup(
     print(
         "✅ Eventos.py instalado correctamente."
     )
-
