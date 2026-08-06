@@ -15,7 +15,7 @@ ZONA_HORARIA = ZoneInfo("Europe/Madrid")
 
 
 # ============================================================
-# VISTA PRINCIPAL
+# VISTA DEL PANEL
 # ============================================================
 
 class GuerraView(discord.ui.View):
@@ -41,7 +41,7 @@ class GuerraView(discord.ui.View):
 
 
 # ============================================================
-# MODAL PARA REGISTRAR GUERRA
+# MODAL DE REGISTRO
 # ============================================================
 
 class GuerraModal(
@@ -111,7 +111,7 @@ class GuerraModal(
         except ValueError:
 
             await interaction.response.send_message(
-                "❌ La fecha u hora no tienen un formato válido.\n"
+                "❌ Fecha u hora incorrectas.\n"
                 "Ejemplo: `06/08/2026` y `22:00`.",
                 ephemeral=True
             )
@@ -119,7 +119,7 @@ class GuerraModal(
             return
 
         # ====================================================
-        # COMPROBAR FECHA FUTURA
+        # COMPROBAR FECHA
         # ====================================================
 
         ahora = datetime.now(
@@ -136,7 +136,7 @@ class GuerraModal(
             return
 
         # ====================================================
-        # DATOS DE LA GUERRA
+        # DATOS
         # ====================================================
 
         datos = {
@@ -147,27 +147,23 @@ class GuerraModal(
         }
 
         # ====================================================
-        # GUARDAR GUERRA
+        # GUARDAR
         # ====================================================
 
-        self.cog.guerras.append(
-            datos
-        )
+        self.cog.guerras.append(datos)
 
         # ====================================================
-        # RESPONDER AL USUARIO
+        # RESPUESTA
         # ====================================================
 
         await interaction.response.send_message(
             "✅ **Guerra registrada correctamente.**\n"
-            "📋 El registro se ha enviado automáticamente.",
+            "📋 Se enviará automáticamente al registro.",
             ephemeral=True
         )
 
         # ====================================================
-        # ENVIAR REGISTRO AUTOMÁTICAMENTE
-        #
-        # ESTO ES INDEPENDIENTE DEL PANEL.
+        # REGISTRO AUTOMÁTICO
         # ====================================================
 
         try:
@@ -181,13 +177,11 @@ class GuerraModal(
         except Exception as e:
 
             print(
-                f"[GUERRAS] ❌ Error enviando registro: {e}"
+                f"[GUERRAS] ERROR REGISTRO: {e}"
             )
 
         # ====================================================
         # ACTUALIZAR PANEL
-        #
-        # SI FALLA, EL REGISTRO YA SE HA ENVIADO.
         # ====================================================
 
         try:
@@ -199,7 +193,7 @@ class GuerraModal(
         except Exception as e:
 
             print(
-                f"[GUERRAS] ⚠️ Error actualizando panel: {e}"
+                f"[GUERRAS] ERROR PANEL: {e}"
             )
 
 
@@ -216,7 +210,6 @@ class Guerras(commands.Cog):
 
         self.bot = bot
 
-        # Lista de guerras mientras el bot está encendido
         self.guerras = []
 
     # ========================================================
@@ -225,17 +218,14 @@ class Guerras(commands.Cog):
 
     def obtener_canal(
         self,
-        guild: discord.Guild,
-        nombre: str
+        guild,
+        nombre
     ):
 
         if guild is None:
             return None
 
-        # ----------------------------------------------------
-        # BÚSQUEDA EXACTA
-        # ----------------------------------------------------
-
+        # Búsqueda exacta
         canal = discord.utils.get(
             guild.text_channels,
             name=nombre
@@ -244,10 +234,7 @@ class Guerras(commands.Cog):
         if canal:
             return canal
 
-        # ----------------------------------------------------
-        # SEGUNDA BÚSQUEDA
-        # ----------------------------------------------------
-
+        # Segunda búsqueda
         for canal in guild.text_channels:
 
             if canal.name.strip() == nombre.strip():
@@ -262,23 +249,13 @@ class Guerras(commands.Cog):
 
     async def enviar_registro(
         self,
-        guild: discord.Guild,
-        usuario: discord.Member,
-        guerra: dict
+        guild,
+        usuario,
+        guerra
     ):
 
         if guild is None:
-
-            print(
-                "[GUERRAS] ❌ No se encontró el servidor."
-            )
-
             return
-
-        # ----------------------------------------------------
-        # BUSCAR CANAL:
-        # registro-guerra-📋
-        # ----------------------------------------------------
 
         canal = self.obtener_canal(
             guild,
@@ -288,29 +265,20 @@ class Guerras(commands.Cog):
         if canal is None:
 
             print(
-                f"[GUERRAS] ❌ No existe el canal "
-                f"'{CANAL_REGISTRO}'"
+                f"[GUERRAS] ❌ NO EXISTE: "
+                f"{CANAL_REGISTRO}"
             )
 
             return
 
-        # ----------------------------------------------------
-        # BOT
-        # ----------------------------------------------------
+        # ====================================================
+        # PERMISOS
+        # ====================================================
 
         bot_member = guild.me
 
         if bot_member is None:
-
-            print(
-                "[GUERRAS] ❌ No se encontró el bot."
-            )
-
             return
-
-        # ----------------------------------------------------
-        # PERMISOS
-        # ----------------------------------------------------
 
         permisos = canal.permissions_for(
             bot_member
@@ -319,8 +287,8 @@ class Guerras(commands.Cog):
         if not permisos.view_channel:
 
             print(
-                f"[GUERRAS] ❌ El bot no puede ver "
-                f"#{CANAL_REGISTRO}"
+                f"[GUERRAS] ❌ NO PUEDE VER: "
+                f"{CANAL_REGISTRO}"
             )
 
             return
@@ -328,29 +296,27 @@ class Guerras(commands.Cog):
         if not permisos.send_messages:
 
             print(
-                f"[GUERRAS] ❌ El bot no puede escribir "
-                f"en #{CANAL_REGISTRO}"
+                f"[GUERRAS] ❌ NO PUEDE ESCRIBIR: "
+                f"{CANAL_REGISTRO}"
             )
 
             return
 
-        # ----------------------------------------------------
+        # ====================================================
         # FECHA
-        # ----------------------------------------------------
+        # ====================================================
 
         fecha = guerra["fecha"].astimezone(
             ZONA_HORARIA
         )
 
-        # ----------------------------------------------------
-        # EMBED DEL REGISTRO
-        # ----------------------------------------------------
+        # ====================================================
+        # EMBED
+        # ====================================================
 
         embed = discord.Embed(
             title="📋 Registro de guerra",
-            description=(
-                "⚔️ **Nueva guerra registrada**"
-            ),
+            description="⚔️ **Nueva guerra registrada**",
             timestamp=datetime.now(
                 ZONA_HORARIA
             )
@@ -402,9 +368,9 @@ class Guerras(commands.Cog):
             text="The Warriors • Registro de guerras"
         )
 
-        # ----------------------------------------------------
+        # ====================================================
         # ENVIAR
-        # ----------------------------------------------------
+        # ====================================================
 
         try:
 
@@ -413,37 +379,43 @@ class Guerras(commands.Cog):
             )
 
             print(
-                f"[GUERRAS] ✅ Registro enviado automáticamente "
-                f"a #{CANAL_REGISTRO}"
+                f"[GUERRAS] ✅ REGISTRO ENVIADO A "
+                f"#{CANAL_REGISTRO}"
             )
 
         except discord.Forbidden:
 
             print(
-                f"[GUERRAS] ❌ Discord rechazó el envío "
-                f"a #{CANAL_REGISTRO}"
+                f"[GUERRAS] ❌ SIN PERMISOS EN "
+                f"#{CANAL_REGISTRO}"
             )
 
         except discord.HTTPException as e:
 
             print(
-                f"[GUERRAS] ❌ Error de Discord: {e}"
-            )
-
-        except Exception as e:
-
-            print(
-                f"[GUERRAS] ❌ Error inesperado: {e}"
+                f"[GUERRAS] ❌ ERROR DISCORD: {e}"
             )
 
     # ========================================================
-    # ACTUALIZAR PANEL DE GUERRAS
+    # ACTUALIZAR PANEL
     # ========================================================
 
     async def actualizar_guerras(
         self,
-        guild: discord.Guild
+        guild
     ):
+
+        if guild is None:
+
+            print(
+                "[GUERRAS] ❌ GUILD ES NONE"
+            )
+
+            return False
+
+        # ====================================================
+        # BUSCAR CANAL
+        # ====================================================
 
         canal = self.obtener_canal(
             guild,
@@ -453,15 +425,51 @@ class Guerras(commands.Cog):
         if canal is None:
 
             print(
-                f"[GUERRAS] ⚠️ No existe el canal "
-                f"'{CANAL_GUERRAS}'"
+                f"[GUERRAS] ❌ NO EXISTE EL CANAL: "
+                f"{CANAL_GUERRAS}"
             )
 
-            return
+            return False
 
-        # ----------------------------------------------------
-        # BORRAR MENSAJES ANTERIORES DEL BOT
-        # ----------------------------------------------------
+        # ====================================================
+        # COMPROBAR PERMISOS
+        # ====================================================
+
+        bot_member = guild.me
+
+        if bot_member is None:
+
+            print(
+                "[GUERRAS] ❌ NO SE ENCUENTRA EL BOT"
+            )
+
+            return False
+
+        permisos = canal.permissions_for(
+            bot_member
+        )
+
+        if not permisos.view_channel:
+
+            print(
+                f"[GUERRAS] ❌ NO PUEDE VER "
+                f"#{CANAL_GUERRAS}"
+            )
+
+            return False
+
+        if not permisos.send_messages:
+
+            print(
+                f"[GUERRAS] ❌ NO PUEDE ESCRIBIR "
+                f"#{CANAL_GUERRAS}"
+            )
+
+            return False
+
+        # ====================================================
+        # BORRAR PANELES ANTERIORES DEL BOT
+        # ====================================================
 
         try:
 
@@ -482,16 +490,22 @@ class Guerras(commands.Cog):
 
                         pass
 
+        except discord.Forbidden:
+
+            print(
+                f"[GUERRAS] ⚠️ NO PUEDE LEER HISTORIAL "
+                f"#{CANAL_GUERRAS}"
+            )
+
         except Exception as e:
 
             print(
-                f"[GUERRAS] ⚠️ No se pudieron limpiar "
-                f"los mensajes anteriores: {e}"
+                f"[GUERRAS] ⚠️ ERROR HISTORIAL: {e}"
             )
 
-        # ----------------------------------------------------
-        # EMBED DEL PANEL
-        # ----------------------------------------------------
+        # ====================================================
+        # CREAR EMBED
+        # ====================================================
 
         embed = discord.Embed(
             title="⚔️ Guerras",
@@ -502,9 +516,9 @@ class Guerras(commands.Cog):
             )
         )
 
-        # ----------------------------------------------------
+        # ====================================================
         # MOSTRAR GUERRAS
-        # ----------------------------------------------------
+        # ====================================================
 
         if self.guerras:
 
@@ -550,9 +564,9 @@ class Guerras(commands.Cog):
                 inline=False
             )
 
-        # ----------------------------------------------------
+        # ====================================================
         # ENVIAR PANEL
-        # ----------------------------------------------------
+        # ====================================================
 
         try:
 
@@ -562,22 +576,36 @@ class Guerras(commands.Cog):
             )
 
             print(
-                f"[GUERRAS] ✅ Panel actualizado "
-                f"en #{CANAL_GUERRAS}"
+                f"[GUERRAS] ✅ PANEL ENVIADO A "
+                f"#{CANAL_GUERRAS}"
             )
+
+            return True
 
         except discord.Forbidden:
 
             print(
-                f"[GUERRAS] ❌ El bot no puede escribir "
-                f"en #{CANAL_GUERRAS}"
+                f"[GUERRAS] ❌ DISCORD RECHAZÓ EL ENVÍO "
+                f"EN #{CANAL_GUERRAS}"
             )
+
+            return False
 
         except discord.HTTPException as e:
 
             print(
-                f"[GUERRAS] ❌ Error actualizando panel: {e}"
+                f"[GUERRAS] ❌ ERROR DISCORD PANEL: {e}"
             )
+
+            return False
+
+        except Exception as e:
+
+            print(
+                f"[GUERRAS] ❌ ERROR PANEL: {e}"
+            )
+
+            return False
 
     # ========================================================
     # COMANDO !GUERRAS
@@ -591,22 +619,83 @@ class Guerras(commands.Cog):
     )
     async def guerras_command(
         self,
-        ctx: commands.Context
+        ctx
     ):
 
-        await self.actualizar_guerras(
-            ctx.guild
+        try:
+
+            resultado = await self.actualizar_guerras(
+                ctx.guild
+            )
+
+            if resultado:
+
+                await ctx.send(
+                    "✅ **Panel de guerras enviado correctamente.**",
+                    delete_after=5
+                )
+
+            else:
+
+                await ctx.send(
+                    "❌ **No se pudo enviar el panel.**\n"
+                    "Mira la consola del bot para ver el motivo.",
+                    delete_after=15
+                )
+
+        except Exception as e:
+
+            print(
+                f"[GUERRAS] ❌ ERROR EN !GUERRAS: {e}"
+            )
+
+            try:
+
+                await ctx.send(
+                    f"❌ **Error en `!guerras`:**\n"
+                    f"```{e}```",
+                    delete_after=15
+                )
+
+            except discord.HTTPException:
+                pass
+
+    # ========================================================
+    # ERROR DEL COMANDO
+    # ========================================================
+
+    @guerras_command.error
+    async def guerras_command_error(
+        self,
+        ctx,
+        error
+    ):
+
+        if isinstance(
+            error,
+            commands.MissingPermissions
+        ):
+
+            await ctx.send(
+                "❌ No tienes permisos para usar `!guerras`.",
+                delete_after=10
+            )
+
+            return
+
+        print(
+            f"[GUERRAS] ❌ ERROR DEL COMANDO: {error}"
         )
 
         try:
 
             await ctx.send(
-                "✅ **Panel de guerras actualizado.**",
-                delete_after=5
+                f"❌ Error en `!guerras`:\n"
+                f"```{error}```",
+                delete_after=15
             )
 
         except discord.HTTPException:
-
             pass
 
 
@@ -614,9 +703,7 @@ class Guerras(commands.Cog):
 # SETUP
 # ============================================================
 
-async def setup(
-    bot
-):
+async def setup(bot):
 
     await bot.add_cog(
         Guerras(bot)
