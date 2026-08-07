@@ -9,7 +9,6 @@ import asyncio
 # ============================================================
 
 CANAL_EVENTOS = "eventos-📅"
-
 ARCHIVO_EVENTOS = Path("data/eventos.json")
 
 # ============================================================
@@ -88,7 +87,7 @@ async def guardar_eventos():
 
 
 # ============================================================
-# CREAR EMBED DEL EVENTO
+# CREAR EMBED
 # ============================================================
 
 def crear_embed_evento(evento):
@@ -116,19 +115,28 @@ def crear_embed_evento(evento):
 
     embed.add_field(
         name="🎯 Tipo de evento",
-        value=evento.get("tipo", "Sin especificar"),
+        value=evento.get(
+            "tipo",
+            "Sin especificar"
+        ),
         inline=False
     )
 
     embed.add_field(
         name="📅 Fecha",
-        value=evento.get("fecha", "Sin especificar"),
+        value=evento.get(
+            "fecha",
+            "Sin especificar"
+        ),
         inline=True
     )
 
     embed.add_field(
         name="🕐 Hora",
-        value=evento.get("hora", "Sin especificar"),
+        value=evento.get(
+            "hora",
+            "Sin especificar"
+        ),
         inline=True
     )
 
@@ -146,10 +154,10 @@ def crear_embed_evento(evento):
 
 
 # ============================================================
-# BUSCAR EVENTO POR MENSAJE
+# BUSCAR EVENTO
 # ============================================================
 
-def buscar_evento_por_mensaje(mensaje_id):
+def obtener_evento(mensaje_id):
 
     for evento_id, evento in EVENTOS.items():
 
@@ -163,7 +171,7 @@ def buscar_evento_por_mensaje(mensaje_id):
 
 
 # ============================================================
-# ACTUALIZAR MENSAJE DEL EVENTO
+# ACTUALIZAR EVENTO
 # ============================================================
 
 async def actualizar_evento(
@@ -275,41 +283,25 @@ class CrearEventoModal(
 
             return
 
-        # ====================================================
-        # CREAR EVENTO
-        # ====================================================
-
         evento = {
-
             "guild_id": guild.id,
-
             "tipo": self.tipo.value.strip(),
-
             "fecha": self.fecha.value.strip(),
-
             "hora": self.hora.value.strip(),
-
             "creador_id": interaction.user.id,
-
             "inscritos": [],
-
             "mensaje_id": None
         }
 
         try:
 
-            # Primero enviamos el mensaje.
-            # El ID del mensaje será el identificador único
-            # de los botones de este evento.
-
+            # Crear primero el mensaje.
             mensaje = await canal.send(
-                embed=crear_embed_evento(evento),
-                view=EventoView(None)
+                embed=crear_embed_evento(evento)
             )
 
+            # El ID del mensaje identifica el evento.
             evento["mensaje_id"] = mensaje.id
-
-            # Guardar en memoria
 
             evento_id = str(
                 mensaje.id
@@ -319,9 +311,7 @@ class CrearEventoModal(
 
             await guardar_eventos()
 
-            # Cambiar los botones temporales por los
-            # botones definitivos del evento.
-
+            # Añadir los botones definitivos.
             await mensaje.edit(
                 view=EventoView(
                     mensaje.id
@@ -397,9 +387,9 @@ class EventoView(discord.ui.View):
 
         self.mensaje_id = mensaje_id
 
-        # ====================================================
-        # ID ÚNICO POR EVENTO
-        # ====================================================
+        # ----------------------------------------------------
+        # Cada evento tiene IDs únicos.
+        # ----------------------------------------------------
 
         if mensaje_id is None:
 
@@ -412,7 +402,7 @@ class EventoView(discord.ui.View):
             )
 
         # ====================================================
-        # BOTÓN INSCRIBIRSE
+        # INSCRIBIRSE
         # ====================================================
 
         boton_inscribirse = discord.ui.Button(
@@ -429,7 +419,7 @@ class EventoView(discord.ui.View):
         )
 
         # ====================================================
-        # BOTÓN CANCELAR
+        # CANCELAR
         # ====================================================
 
         boton_cancelar = discord.ui.Button(
@@ -446,7 +436,7 @@ class EventoView(discord.ui.View):
         )
 
         # ====================================================
-        # BOTÓN ELIMINAR
+        # ELIMINAR
         # ====================================================
 
         boton_eliminar = discord.ui.Button(
@@ -463,16 +453,6 @@ class EventoView(discord.ui.View):
         )
 
     # ========================================================
-    # BUSCAR EVENTO
-    # ========================================================
-
-    def obtener_evento(self):
-
-        return buscar_evento_por_mensaje(
-            self.mensaje_id
-        )
-
-    # ========================================================
     # INSCRIBIRSE
     # ========================================================
 
@@ -481,7 +461,9 @@ class EventoView(discord.ui.View):
         interaction: discord.Interaction
     ):
 
-        evento_id, evento = self.obtener_evento()
+        evento_id, evento = obtener_evento(
+            self.mensaje_id
+        )
 
         if evento is None:
 
@@ -514,6 +496,7 @@ class EventoView(discord.ui.View):
 
         await guardar_eventos()
 
+        # Respondemos primero para evitar timeout.
         await interaction.response.send_message(
             "✅ **Te has inscrito en el evento.**",
             ephemeral=True
@@ -536,7 +519,9 @@ class EventoView(discord.ui.View):
         interaction: discord.Interaction
     ):
 
-        evento_id, evento = self.obtener_evento()
+        evento_id, evento = obtener_evento(
+            self.mensaje_id
+        )
 
         if evento is None:
 
@@ -583,7 +568,7 @@ class EventoView(discord.ui.View):
             )
 
     # ========================================================
-    # ELIMINAR EVENTO
+    # ELIMINAR
     # ========================================================
 
     async def eliminar(
@@ -600,7 +585,9 @@ class EventoView(discord.ui.View):
 
             return
 
-        evento_id, evento = self.obtener_evento()
+        evento_id, evento = obtener_evento(
+            self.mensaje_id
+        )
 
         if evento is None:
 
@@ -725,98 +712,6 @@ class Eventos(commands.Cog):
             "🟢 Eventos.py cargado"
         )
 
-    # ========================================================
-    # READY
-    # ========================================================
-
-    @commands.Cog.listener()
-    async def on_ready(
-        self
-    ):
-
-        for guild in self.bot.guilds:
-
-            canal = discord.utils.get(
-                guild.text_channels,
-                name=CANAL_EVENTOS
-            )
-
-            if canal is None:
-
-                print(
-                    f"❌ No encuentro #{CANAL_EVENTOS} "
-                    f"en {guild.name}"
-                )
-
-                continue
-
-            try:
-
-                panel_existe = False
-
-                async for mensaje in canal.history(
-                    limit=50
-                ):
-
-                    if (
-                        self.bot.user is None
-                        or mensaje.author.id != self.bot.user.id
-                    ):
-
-                        continue
-
-                    if not mensaje.embeds:
-
-                        continue
-
-                    if (
-                        mensaje.embeds[0].title
-                        == "🛠️ PANEL DE EVENTOS"
-                    ):
-
-                        panel_existe = True
-                        break
-
-                if not panel_existe:
-
-                    embed = discord.Embed(
-                        title="🛠️ PANEL DE EVENTOS",
-                        description=(
-                            "Los administradores pueden crear "
-                            "eventos desde el botón de abajo.\n\n"
-                            "Los miembros podrán inscribirse "
-                            "directamente en cada evento."
-                        ),
-                        color=discord.Color.gold()
-                    )
-
-                    embed.set_footer(
-                        text="Panel de administración"
-                    )
-
-                    await canal.send(
-                        embed=embed,
-                        view=PanelEventosView()
-                    )
-
-                    print(
-                        f"✅ Panel de eventos creado "
-                        f"en {guild.name}"
-                    )
-
-            except discord.Forbidden:
-
-                print(
-                    f"❌ No tengo permisos en "
-                    f"#{CANAL_EVENTOS} de {guild.name}"
-                )
-
-            except discord.HTTPException as error:
-
-                print(
-                    f"❌ Error en eventos: {error}"
-                )
-
 
 # ============================================================
 # SETUP
@@ -826,18 +721,12 @@ async def setup(
     bot
 ):
 
-    # ========================================================
-    # PANEL ADMINISTRACIÓN
-    # ========================================================
-
+    # Panel de administración permanente.
     bot.add_view(
         PanelEventosView()
     )
 
-    # ========================================================
-    # RECUPERAR EVENTOS EXISTENTES
-    # ========================================================
-
+    # Recuperar los eventos guardados.
     eventos_recuperados = 0
 
     for evento in EVENTOS.values():
