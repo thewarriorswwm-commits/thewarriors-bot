@@ -163,11 +163,13 @@ def crear_embed_evento(evento):
 
 def buscar_evento_por_mensaje(mensaje_id):
 
+    mensaje_id = str(mensaje_id)
+
     for evento_id, evento in EVENTOS.items():
 
         if str(
             evento.get("mensaje_id")
-        ) == str(mensaje_id):
+        ) == mensaje_id:
 
             return evento_id, evento
 
@@ -213,6 +215,12 @@ async def actualizar_evento(
 
         print(
             f"❌ Error actualizando evento: {error}"
+        )
+
+    except Exception as error:
+
+        print(
+            f"❌ Error inesperado actualizando evento: {error}"
         )
 
     return False
@@ -306,9 +314,9 @@ class CrearEventoModal(
 
         try:
 
-            # ------------------------------------------------
+            # ==================================================
             # CREAR MENSAJE
-            # ------------------------------------------------
+            # ==================================================
 
             mensaje = await canal.send(
                 embed=crear_embed_evento(evento),
@@ -317,9 +325,9 @@ class CrearEventoModal(
 
             evento["mensaje_id"] = mensaje.id
 
-            # ------------------------------------------------
+            # ==================================================
             # GUARDAR EVENTO
-            # ------------------------------------------------
+            # ==================================================
 
             evento_id = str(
                 mensaje.id
@@ -349,8 +357,8 @@ class CrearEventoModal(
             if not interaction.response.is_done():
 
                 await interaction.response.send_message(
-                    "❌ No tengo permisos para escribir en "
-                    f"#{CANAL_EVENTOS}.",
+                    "❌ No tengo permisos para escribir "
+                    f"en #{CANAL_EVENTOS}.",
                     ephemeral=True
                 )
 
@@ -438,38 +446,90 @@ class EventoView(
 
         usuario_id = interaction.user.id
 
-        inscritos = evento.setdefault(
-            "inscritos",
-            []
-        )
+        # ====================================================
+        # BLOQUEAR CAMBIOS SIMULTÁNEOS
+        # ====================================================
 
-        if usuario_id in inscritos:
+        async with LOCK_EVENTOS:
 
-            await interaction.response.send_message(
-                "ℹ️ Ya estás inscrito en este evento.",
-                ephemeral=True
+            inscritos = evento.setdefault(
+                "inscritos",
+                []
             )
 
-            return
+            # Convertimos a int para evitar problemas
+            # si algún ID antiguo está guardado como texto.
+            inscritos = [
+                int(uid)
+                for uid in inscritos
+            ]
 
-        inscritos.append(
-            usuario_id
-        )
+            evento["inscritos"] = inscritos
 
-        await guardar_eventos()
+            if usuario_id in inscritos:
+
+                await interaction.response.send_message(
+                    "ℹ️ Ya estás inscrito en este evento.",
+                    ephemeral=True
+                )
+
+                return
+
+            inscritos.append(
+                usuario_id
+            )
+
+            try:
+
+                ARCHIVO_EVENTOS.parent.mkdir(
+                    parents=True,
+                    exist_ok=True
+                )
+
+                ARCHIVO_EVENTOS.write_text(
+                    json.dumps(
+                        EVENTOS,
+                        ensure_ascii=False,
+                        indent=4
+                    ),
+                    encoding="utf-8"
+                )
+
+            except Exception as error:
+
+                print(
+                    f"❌ Error guardando inscripción: {error}"
+                )
+
+                inscritos.remove(
+                    usuario_id
+                )
+
+                await interaction.response.send_message(
+                    "❌ No se pudo guardar tu inscripción.",
+                    ephemeral=True
+                )
+
+                return
+
+        # ====================================================
+        # RESPONDER
+        # ====================================================
 
         await interaction.response.send_message(
             "✅ **Te has inscrito en el evento.**",
             ephemeral=True
         )
 
-        if interaction.channel is not None:
+        # ====================================================
+        # ACTUALIZAR MENSAJE
+        # ====================================================
 
-            await actualizar_evento(
-                interaction.channel,
-                mensaje.id,
-                evento
-            )
+        await actualizar_evento(
+            interaction.channel,
+            mensaje.id,
+            evento
+        )
 
 
     # ========================================================
@@ -514,38 +574,88 @@ class EventoView(
 
         usuario_id = interaction.user.id
 
-        inscritos = evento.setdefault(
-            "inscritos",
-            []
-        )
+        # ====================================================
+        # BLOQUEAR CAMBIOS SIMULTÁNEOS
+        # ====================================================
 
-        if usuario_id not in inscritos:
+        async with LOCK_EVENTOS:
 
-            await interaction.response.send_message(
-                "ℹ️ No estás inscrito en este evento.",
-                ephemeral=True
+            inscritos = evento.setdefault(
+                "inscritos",
+                []
             )
 
-            return
+            inscritos = [
+                int(uid)
+                for uid in inscritos
+            ]
 
-        inscritos.remove(
-            usuario_id
-        )
+            evento["inscritos"] = inscritos
 
-        await guardar_eventos()
+            if usuario_id not in inscritos:
+
+                await interaction.response.send_message(
+                    "ℹ️ No estás inscrito en este evento.",
+                    ephemeral=True
+                )
+
+                return
+
+            inscritos.remove(
+                usuario_id
+            )
+
+            try:
+
+                ARCHIVO_EVENTOS.parent.mkdir(
+                    parents=True,
+                    exist_ok=True
+                )
+
+                ARCHIVO_EVENTOS.write_text(
+                    json.dumps(
+                        EVENTOS,
+                        ensure_ascii=False,
+                        indent=4
+                    ),
+                    encoding="utf-8"
+                )
+
+            except Exception as error:
+
+                print(
+                    f"❌ Error guardando cancelación: {error}"
+                )
+
+                inscritos.append(
+                    usuario_id
+                )
+
+                await interaction.response.send_message(
+                    "❌ No se pudo cancelar tu inscripción.",
+                    ephemeral=True
+                )
+
+                return
+
+        # ====================================================
+        # RESPONDER
+        # ====================================================
 
         await interaction.response.send_message(
             "❌ **Has cancelado tu inscripción.**",
             ephemeral=True
         )
 
-        if interaction.channel is not None:
+        # ====================================================
+        # ACTUALIZAR MENSAJE
+        # ====================================================
 
-            await actualizar_evento(
-                interaction.channel,
-                mensaje.id,
-                evento
-            )
+        await actualizar_evento(
+            interaction.channel,
+            mensaje.id,
+            evento
+        )
 
 
     # ========================================================
@@ -597,6 +707,19 @@ class EventoView(
 
             return
 
+        # ====================================================
+        # RESPONDER ANTES DE BORRAR
+        # ====================================================
+
+        await interaction.response.send_message(
+            "🗑️ **Evento eliminado correctamente.**",
+            ephemeral=True
+        )
+
+        # ====================================================
+        # BORRAR MENSAJE
+        # ====================================================
+
         try:
 
             await mensaje.delete()
@@ -607,9 +730,8 @@ class EventoView(
 
         except discord.Forbidden:
 
-            await interaction.response.send_message(
-                "❌ No tengo permisos para eliminar el evento.",
-                ephemeral=True
+            print(
+                "❌ No tengo permisos para eliminar el evento."
             )
 
             return
@@ -620,27 +742,44 @@ class EventoView(
                 f"❌ Error eliminando evento: {error}"
             )
 
-            await interaction.response.send_message(
-                "❌ Discord no ha permitido eliminar el evento.",
-                ephemeral=True
-            )
-
             return
 
-        EVENTOS.pop(
-            evento_id,
-            None
-        )
+        # ====================================================
+        # BORRAR DE LA BASE DE DATOS
+        # ====================================================
 
-        await guardar_eventos()
+        async with LOCK_EVENTOS:
 
-        await interaction.response.send_message(
-            "🗑️ **Evento eliminado correctamente.**",
-            ephemeral=True
-        )
+            EVENTOS.pop(
+                evento_id,
+                None
+            )
+
+            try:
+
+                ARCHIVO_EVENTOS.parent.mkdir(
+                    parents=True,
+                    exist_ok=True
+                )
+
+                ARCHIVO_EVENTOS.write_text(
+                    json.dumps(
+                        EVENTOS,
+                        ensure_ascii=False,
+                        indent=4
+                    ),
+                    encoding="utf-8"
+                )
+
+            except Exception as error:
+
+                print(
+                    f"❌ Error guardando eliminación: {error}"
+                )
 
         print(
-            f"🗑️ Evento eliminado: {evento.get('tipo', 'Evento')}"
+            f"🗑️ Evento eliminado: "
+            f"{evento.get('tipo', 'Evento')}"
         )
 
 
@@ -657,7 +796,6 @@ class PanelEventosView(
         super().__init__(
             timeout=None
         )
-
 
     @discord.ui.button(
         label="Crear evento",
@@ -713,9 +851,9 @@ async def setup(
     bot
 ):
 
-    # --------------------------------------------------------
+    # ========================================================
     # REGISTRAR VISTAS PERSISTENTES
-    # --------------------------------------------------------
+    # ========================================================
 
     bot.add_view(
         PanelEventosView()
@@ -725,9 +863,9 @@ async def setup(
         EventoView()
     )
 
-    # --------------------------------------------------------
+    # ========================================================
     # CARGAR COG
-    # --------------------------------------------------------
+    # ========================================================
 
     await bot.add_cog(
         Eventos(bot)
@@ -736,4 +874,3 @@ async def setup(
     print(
         "✅ Eventos.py instalado correctamente."
     )
-
