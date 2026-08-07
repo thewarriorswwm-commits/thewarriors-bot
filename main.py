@@ -6,7 +6,6 @@ from discord import app_commands
 from discord.ext import commands
 from dotenv import load_dotenv
 
-
 # ============================================================
 # CARGAR .ENV
 # ============================================================
@@ -20,7 +19,6 @@ if not TOKEN:
         "❌ No se ha encontrado DISCORD_TOKEN."
     )
 
-
 # ============================================================
 # INTENTS
 # ============================================================
@@ -31,7 +29,6 @@ intents.presences = True
 intents.members = True
 intents.message_content = True
 
-
 # ============================================================
 # BOT
 # ============================================================
@@ -41,7 +38,6 @@ bot = commands.Bot(
     intents=intents
 )
 
-
 # ============================================================
 # COGS
 # ============================================================
@@ -50,6 +46,7 @@ COGS = [
     "cogs.Automod",
     "cogs.Bienvenida",
     "cogs.clear",
+    "cogs.Eventos",
     "cogs.Guerras",
     "cogs.Logs",
     "cogs.Moderacion",
@@ -57,7 +54,6 @@ COGS = [
     "cogs.Utilidades",
     "cogs.WhereWindsMeet",
 ]
-
 
 # ============================================================
 # CARGAR COGS
@@ -80,7 +76,6 @@ async def cargar_cogs():
             print(
                 f"❌ ERROR EN {cog}: {error}"
             )
-
 
 # ============================================================
 # BOT LISTO
@@ -118,7 +113,6 @@ async def on_ready():
         print(
             f"❌ ERROR AL SINCRONIZAR: {error}"
         )
-
 
 # ============================================================
 # ERROR GLOBAL DE COMANDOS PREFIX
@@ -161,7 +155,6 @@ async def on_command_error(ctx, error):
         f"❌ ERROR DE COMANDO: {error}"
     )
 
-
 # ============================================================
 # ERROR GLOBAL DE SLASH COMMANDS
 # ============================================================
@@ -197,7 +190,6 @@ async def on_app_command_error(
         f"❌ ERROR SLASH COMMAND: {error}"
     )
 
-
 # ============================================================
 # INICIAR BOT
 # ============================================================
@@ -213,7 +205,6 @@ async def main():
     await bot.start(
         TOKEN
     )
-
 
 # ============================================================
 # EJECUTAR
@@ -232,3 +223,4 @@ if __name__ == "__main__":
         print(
             "🛑 Bot detenido."
         )
+
