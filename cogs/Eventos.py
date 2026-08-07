@@ -4,7 +4,6 @@ from pathlib import Path
 import json
 import asyncio
 
-
 # ============================================================
 # CONFIGURACIÓN
 # ============================================================
@@ -12,7 +11,6 @@ import asyncio
 CANAL_EVENTOS = "eventos-📅"
 
 ARCHIVO_EVENTOS = Path("data/eventos.json")
-
 
 # ============================================================
 # BASE DE DATOS
@@ -57,7 +55,6 @@ def cargar_eventos():
 EVENTOS = cargar_eventos()
 
 LOCK_EVENTOS = asyncio.Lock()
-
 
 # ============================================================
 # GUARDAR EVENTOS
@@ -119,19 +116,19 @@ def crear_embed_evento(evento):
 
     embed.add_field(
         name="🎯 Tipo de evento",
-        value=evento["tipo"],
+        value=evento.get("tipo", "Sin especificar"),
         inline=False
     )
 
     embed.add_field(
         name="📅 Fecha",
-        value=evento["fecha"],
+        value=evento.get("fecha", "Sin especificar"),
         inline=True
     )
 
     embed.add_field(
         name="🕐 Hora",
-        value=evento["hora"],
+        value=evento.get("hora", "Sin especificar"),
         inline=True
     )
 
@@ -146,6 +143,23 @@ def crear_embed_evento(evento):
     )
 
     return embed
+
+
+# ============================================================
+# BUSCAR EVENTO POR MENSAJE
+# ============================================================
+
+def buscar_evento_por_mensaje(mensaje_id):
+
+    for evento_id, evento in EVENTOS.items():
+
+        if str(
+            evento.get("mensaje_id")
+        ) == str(mensaje_id):
+
+            return evento_id, evento
+
+    return None, None
 
 
 # ============================================================
@@ -262,12 +276,8 @@ class CrearEventoModal(
             return
 
         # ====================================================
-        # CREAR ID DEL EVENTO
+        # CREAR EVENTO
         # ====================================================
-
-        evento_id = str(
-            interaction.id
-        )
 
         evento = {
 
@@ -286,31 +296,37 @@ class CrearEventoModal(
             "mensaje_id": None
         }
 
-        # ====================================================
-        # CREAR MENSAJE
-        # ====================================================
-
         try:
+
+            # Primero enviamos el mensaje.
+            # El ID del mensaje será el identificador único
+            # de los botones de este evento.
 
             mensaje = await canal.send(
                 embed=crear_embed_evento(evento),
-                view=EventoView(
-                    None
-                )
+                view=EventoView(None)
             )
 
             evento["mensaje_id"] = mensaje.id
 
-            # Ahora la vista conoce el mensaje
-            await mensaje.edit(
-                view=EventoView(
-                    mensaje.id
-                )
+            # Guardar en memoria
+
+            evento_id = str(
+                mensaje.id
             )
 
             EVENTOS[evento_id] = evento
 
             await guardar_eventos()
+
+            # Cambiar los botones temporales por los
+            # botones definitivos del evento.
+
+            await mensaje.edit(
+                view=EventoView(
+                    mensaje.id
+                )
+            )
 
             await interaction.response.send_message(
                 "✅ **Evento creado correctamente.**\n\n"
@@ -329,11 +345,13 @@ class CrearEventoModal(
 
         except discord.Forbidden:
 
-            await interaction.response.send_message(
-                "❌ No tengo permisos para escribir en "
-                f"#{CANAL_EVENTOS}.",
-                ephemeral=True
-            )
+            if not interaction.response.is_done():
+
+                await interaction.response.send_message(
+                    "❌ No tengo permisos para escribir en "
+                    f"#{CANAL_EVENTOS}.",
+                    ephemeral=True
+                )
 
         except discord.HTTPException as error:
 
@@ -341,10 +359,25 @@ class CrearEventoModal(
                 f"❌ Error creando evento: {error}"
             )
 
-            await interaction.response.send_message(
-                "❌ Discord no ha permitido crear el evento.",
-                ephemeral=True
+            if not interaction.response.is_done():
+
+                await interaction.response.send_message(
+                    "❌ Discord no ha permitido crear el evento.",
+                    ephemeral=True
+                )
+
+        except Exception as error:
+
+            print(
+                f"❌ Error inesperado creando evento: {error}"
             )
+
+            if not interaction.response.is_done():
+
+                await interaction.response.send_message(
+                    "❌ Ha ocurrido un error creando el evento.",
+                    ephemeral=True
+                )
 
 
 # ============================================================
@@ -364,36 +397,88 @@ class EventoView(discord.ui.View):
 
         self.mensaje_id = mensaje_id
 
+        # ====================================================
+        # ID ÚNICO POR EVENTO
+        # ====================================================
+
+        if mensaje_id is None:
+
+            sufijo = "nuevo"
+
+        else:
+
+            sufijo = str(
+                mensaje_id
+            )
+
+        # ====================================================
+        # BOTÓN INSCRIBIRSE
+        # ====================================================
+
+        boton_inscribirse = discord.ui.Button(
+            label="Inscribirme",
+            emoji="✅",
+            style=discord.ButtonStyle.success,
+            custom_id=f"evento_inscribirse_{sufijo}"
+        )
+
+        boton_inscribirse.callback = self.inscribirse
+
+        self.add_item(
+            boton_inscribirse
+        )
+
+        # ====================================================
+        # BOTÓN CANCELAR
+        # ====================================================
+
+        boton_cancelar = discord.ui.Button(
+            label="Cancelar inscripción",
+            emoji="❌",
+            style=discord.ButtonStyle.secondary,
+            custom_id=f"evento_cancelar_{sufijo}"
+        )
+
+        boton_cancelar.callback = self.cancelar
+
+        self.add_item(
+            boton_cancelar
+        )
+
+        # ====================================================
+        # BOTÓN ELIMINAR
+        # ====================================================
+
+        boton_eliminar = discord.ui.Button(
+            label="Eliminar evento",
+            emoji="🗑️",
+            style=discord.ButtonStyle.danger,
+            custom_id=f"evento_eliminar_{sufijo}"
+        )
+
+        boton_eliminar.callback = self.eliminar
+
+        self.add_item(
+            boton_eliminar
+        )
+
     # ========================================================
     # BUSCAR EVENTO
     # ========================================================
 
     def obtener_evento(self):
 
-        for evento_id, evento in EVENTOS.items():
-
-            if str(
-                evento.get("mensaje_id")
-            ) == str(self.mensaje_id):
-
-                return evento_id, evento
-
-        return None, None
+        return buscar_evento_por_mensaje(
+            self.mensaje_id
+        )
 
     # ========================================================
     # INSCRIBIRSE
     # ========================================================
 
-    @discord.ui.button(
-        label="Inscribirme",
-        emoji="✅",
-        style=discord.ButtonStyle.success,
-        custom_id="evento_inscribirse"
-    )
     async def inscribirse(
         self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
+        interaction: discord.Interaction
     ):
 
         evento_id, evento = self.obtener_evento()
@@ -429,35 +514,26 @@ class EventoView(discord.ui.View):
 
         await guardar_eventos()
 
-        canal = interaction.channel
-
-        if canal is not None:
-
-            await actualizar_evento(
-                canal,
-                evento["mensaje_id"],
-                evento
-            )
-
         await interaction.response.send_message(
             "✅ **Te has inscrito en el evento.**",
             ephemeral=True
         )
 
+        if interaction.channel is not None:
+
+            await actualizar_evento(
+                interaction.channel,
+                evento["mensaje_id"],
+                evento
+            )
+
     # ========================================================
     # CANCELAR
     # ========================================================
 
-    @discord.ui.button(
-        label="Cancelar inscripción",
-        emoji="❌",
-        style=discord.ButtonStyle.secondary,
-        custom_id="evento_cancelar"
-    )
     async def cancelar(
         self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
+        interaction: discord.Interaction
     ):
 
         evento_id, evento = self.obtener_evento()
@@ -493,35 +569,26 @@ class EventoView(discord.ui.View):
 
         await guardar_eventos()
 
-        canal = interaction.channel
-
-        if canal is not None:
-
-            await actualizar_evento(
-                canal,
-                evento["mensaje_id"],
-                evento
-            )
-
         await interaction.response.send_message(
             "❌ **Has cancelado tu inscripción.**",
             ephemeral=True
         )
 
+        if interaction.channel is not None:
+
+            await actualizar_evento(
+                interaction.channel,
+                evento["mensaje_id"],
+                evento
+            )
+
     # ========================================================
     # ELIMINAR EVENTO
     # ========================================================
 
-    @discord.ui.button(
-        label="Eliminar evento",
-        emoji="🗑️",
-        style=discord.ButtonStyle.danger,
-        custom_id="evento_eliminar"
-    )
     async def eliminar(
         self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
+        interaction: discord.Interaction
     ):
 
         if not interaction.user.guild_permissions.administrator:
@@ -546,13 +613,16 @@ class EventoView(discord.ui.View):
 
         try:
 
-            mensaje = await interaction.channel.fetch_message(
-                evento["mensaje_id"]
-            )
+            if interaction.channel is not None:
 
-            await mensaje.delete()
+                mensaje = await interaction.channel.fetch_message(
+                    int(evento["mensaje_id"])
+                )
+
+                await mensaje.delete()
 
         except discord.NotFound:
+
             pass
 
         except discord.Forbidden:
@@ -577,8 +647,10 @@ class EventoView(discord.ui.View):
 
             return
 
-        # Eliminar de la base de datos
-        del EVENTOS[evento_id]
+        EVENTOS.pop(
+            evento_id,
+            None
+        )
 
         await guardar_eventos()
 
@@ -604,16 +676,22 @@ class PanelEventosView(discord.ui.View):
             timeout=None
         )
 
-    @discord.ui.button(
-        label="Crear evento",
-        emoji="🛠️",
-        style=discord.ButtonStyle.primary,
-        custom_id="eventos_crear"
-    )
+        boton = discord.ui.Button(
+            label="Crear evento",
+            emoji="🛠️",
+            style=discord.ButtonStyle.primary,
+            custom_id="eventos_crear"
+        )
+
+        boton.callback = self.crear_evento
+
+        self.add_item(
+            boton
+        )
+
     async def crear_evento(
         self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
+        interaction: discord.Interaction
     ):
 
         if not interaction.user.guild_permissions.administrator:
@@ -656,28 +734,6 @@ class Eventos(commands.Cog):
         self
     ):
 
-        # ====================================================
-        # REGISTRAR VISTAS DE EVENTOS EXISTENTES
-        # ====================================================
-
-        for evento in EVENTOS.values():
-
-            mensaje_id = evento.get(
-                "mensaje_id"
-            )
-
-            if mensaje_id:
-
-                self.bot.add_view(
-                    EventoView(
-                        mensaje_id
-                    )
-                )
-
-        # ====================================================
-        # CREAR PANEL DE ADMINISTRACIÓN
-        # ====================================================
-
         for guild in self.bot.guilds:
 
             canal = discord.utils.get(
@@ -702,10 +758,15 @@ class Eventos(commands.Cog):
                     limit=50
                 ):
 
-                    if mensaje.author != self.bot.user:
+                    if (
+                        self.bot.user is None
+                        or mensaje.author.id != self.bot.user.id
+                    ):
+
                         continue
 
                     if not mensaje.embeds:
+
                         continue
 
                     if (
@@ -765,15 +826,53 @@ async def setup(
     bot
 ):
 
-    # Panel permanente
+    # ========================================================
+    # PANEL ADMINISTRACIÓN
+    # ========================================================
+
     bot.add_view(
         PanelEventosView()
     )
+
+    # ========================================================
+    # RECUPERAR EVENTOS EXISTENTES
+    # ========================================================
+
+    eventos_recuperados = 0
+
+    for evento in EVENTOS.values():
+
+        mensaje_id = evento.get(
+            "mensaje_id"
+        )
+
+        if not mensaje_id:
+
+            continue
+
+        try:
+
+            bot.add_view(
+                EventoView(
+                    mensaje_id
+                )
+            )
+
+            eventos_recuperados += 1
+
+        except Exception as error:
+
+            print(
+                f"❌ Error recuperando evento "
+                f"{mensaje_id}: {error}"
+            )
 
     await bot.add_cog(
         Eventos(bot)
     )
 
     print(
-        "✅ Eventos.py instalado correctamente."
+        f"✅ Eventos.py instalado correctamente. "
+        f"Eventos recuperados: {eventos_recuperados}"
     )
+
